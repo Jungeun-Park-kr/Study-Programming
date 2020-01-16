@@ -1,0 +1,8 @@
+﻿  HW18.cpp
+c:\users\je991\documents\visual studio 2015\projects\chomework\chomework2\hw18.cpp(38): warning C4244: '=': conversion from 'double' to 'int', possible loss of data
+c:\users\je991\documents\visual studio 2015\projects\chomework\chomework2\hw18.cpp(42): warning C4244: '=': conversion from 'double' to 'int', possible loss of data
+c:\users\je991\documents\visual studio 2015\projects\chomework\chomework2\hw18.cpp(48): warning C4244: '=': conversion from 'double' to 'int', possible loss of data
+c:\users\je991\documents\visual studio 2015\projects\chomework\chomework2\hw18.cpp(52): warning C4244: '=': conversion from 'double' to 'int', possible loss of data
+c:\users\je991\documents\visual studio 2015\projects\chomework\chomework2\hw18.cpp(56): warning C4244: '=': conversion from 'double' to 'int', possible loss of data
+  CHomework2.vcxproj -> C:\Users\je991\Documents\Visual Studio 2015\Projects\CHomework\Debug\CHomework2.exe
+  CHomework2.vcxproj -> C:\Users\je991\Documents\Visual Studio 2015\Projects\CHomework\Debug\CHomework2.pdb (Full PDB)

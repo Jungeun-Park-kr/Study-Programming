@@ -1,0 +1,5 @@
+﻿  asdffef.cpp
+c:\users\je991\documents\visual studio 2015\projects\chomework\cstudy\asdffef.cpp(9): warning C4477: 'scanf' : 서식 문자열 '%c'에 'char *' 형식의 인수가 필요하지만 variadic 인수 1의 형식이 'int *'입니다.
+c:\users\je991\documents\visual studio 2015\projects\chomework\cstudy\asdffef.cpp(10): warning C4477: 'scanf' : 서식 문자열 '%c'에 'char *' 형식의 인수가 필요하지만 variadic 인수 1의 형식이 'int *'입니다.
+c:\users\je991\documents\visual studio 2015\projects\chomework\cstudy\asdffef.cpp(11): warning C4477: 'scanf' : 서식 문자열 '%c'에 'char *' 형식의 인수가 필요하지만 variadic 인수 1의 형식이 'int *'입니다.
+  Cstudy.vcxproj -> C:\Users\je991\Documents\Visual Studio 2015\Projects\CHomework\Debug\Cstudy.exe
