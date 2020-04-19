@@ -160,58 +160,62 @@ void do_iOption(char (*ids)[FILELEN])
 	char *p, *saved;
 
 	if((fp = fopen("score.csv", "r")) == NULL){
+		//채점결과 파일을 열수 없는경우, 에러메시지 출력 후 종료
 		fprintf(stderr, "file open error for score.csv\n");
 		return;
 	}
-
         	
-	fscanf(fp, "%s\n", tmp);
+	fscanf(fp, "%s\n", tmp); //문제 저장을 위해 첫 줄 읽어 tmp에 저장
 	i=0;
-        p = strtok(tmp, ",");
-        strcpy(questions[i++],p);
-	while((p = strtok(NULL, ",")) != NULL) {
-	   strcpy(questions[i++], p);
-        }
-        size = i-1;
-       strcpy(questions[size], ""); 
-
+	p = strtok(tmp, ","); //첫 글자 검색해 저장
+	strcpy(questions[i++], p); //해당 문제 저장
+	while ((p = strtok(NULL, ",")) != NULL) {
+		//한 번 strtok()에 tmp를 사용했으므로, 이후는 NULL로 반복문 가능
+		strcpy(questions[i++], p); //문제를 읽어서 questions[]배열에 저장
+	}
+	size = i - 1; //총 문제 개수 저장 (-1한 이유는 sum을 제외하기 위함)
+	strcpy(questions[size], ""); //sum 제거하기 위해 마지막 내용 없앰
 
 	
 	while(fscanf(fp, "%s\n", tmp) != EOF)
-	{
-		p = strtok(tmp, ",");
-
-		if(!is_exist(ids, tmp)) {
-			continue;
+	{	//학생들의 정보를 읽어오기 위한 반복문
+		p = strtok(tmp, ","); //첫 번째 셀은 학번 정보가 저장되어있음
+		if(!is_exist(ids, tmp)) { //-i옵션 사용시 가변인자로 입력받은 학번인지 검사하는 함수
+			continue; //아닐경우 다음 학번 검색
 		}
-
 		printf("%s's wrong answer : \n", tmp);
-		memset(wrong_quest, 0, sizeof(char)*BUFLEN);
-		i=-1;
+		memset(wrong_quest, 0, sizeof(char)*BUFLEN); //학생이 틀린 문제 저장할 배열 초기화
+		i=-1; //문제이름을 가져올 인덱스
 		while((p = strtok(NULL, ",")) != NULL) {
+			//문제 점수를 하나 읽어오기
 			saved = p;
 			strcpy(check_score, saved);
 			score = atof(saved);
-			i++;
+			i++; //인덱스 증가
 			if (score != 0.00) {
+				//0점이 아닐경우 다음 문제 검사
 			    continue;
 			}
-			sprintf(tmp2, "%s, ", questions[i]);
-			strcat(wrong_quest, tmp2);
+			//0점인 문제를 발견한 경우
+			sprintf(tmp2, "%s, ", questions[i]); //해당 인덱스를 가진 문제이름을 tmp2에 저장 
+			strcat(wrong_quest, tmp2); //해당 문제를 학생의 wrong_quest[]배열에 추가
 		}
-		
-		wrong_quest[strlen(wrong_quest)-2]='\0';
+		//학생이 틀린 문제 출력 후 마지막 문자의 ", "를 제거하기 위한 코드
+		wrong_quest[strlen(wrong_quest)-2]='\0'; //','와 ' '를 제거하기 위해 널문자 대임
+		//그러나 널문자를 대입하면 마지막 문자까지 같이 사라져버림
 		if((p = strpbrk(tmp2, "c")) != NULL) {
-		    wrong_quest[strlen(wrong_quest)-2] = '.';
-		      wrong_quest[strlen(wrong_quest)-1] = 'c';
-		      wrong_quest[strlen(wrong_quest)] = '\0';
+			//마지막으로 읽었던 문제 이름에 "c"가 포함되는지 확인(프로그램 문제인지)
+		    wrong_quest[strlen(wrong_quest)-2] = '.'; //제거된 문자 추가
+		      wrong_quest[strlen(wrong_quest)-1] = 'c'; //제거된 문자 추가
+		      wrong_quest[strlen(wrong_quest)] = '\0'; //문자열의 끝에 널문자 추가
 		}
 		else if((p = strpbrk(tmp2, "t")) != NULL) {
-		    wrong_quest[strlen(wrong_quest)-2] = 'x';
-		      wrong_quest[strlen(wrong_quest)-1] = 't';
-		      wrong_quest[strlen(wrong_quest)] = '\0';
+			//마지막으로 읽었던 문제 이름에 "t"가 포함되는지 확인(빈칸 문제인지)
+		    wrong_quest[strlen(wrong_quest)-2] = 'x'; //제거된 문자 추가
+		      wrong_quest[strlen(wrong_quest)-1] = 't'; //제거된 문자 추가
+		      wrong_quest[strlen(wrong_quest)] = '\0'; //문자열의 끝에 널문자 추가
 		}
-		printf("%s\n", wrong_quest);
+		printf("%s\n", wrong_quest); //해당 학생의 틀린 문제 출력 (완성된 wrong_quest자열 출력)
 	}
 	fclose(fp);
 }
@@ -233,15 +237,16 @@ int is_exist(char (*src)[FILELEN], char *target)
 }
 
 void set_scoreTable(char *ansDir)
-{       //make_scoreTable()함수 실행 위해서 ansDir 파라미터는 필요
+{
 	char filename[FILELEN];
 
-	sprintf(filename, "%s", "./score_table.csv"); //파일 생성위치 변경
+	sprintf(filename, "%s", "./score_table.csv"); //파일 생성 위치 변경(현재 실행위치)
 
 	if(access(filename, F_OK) == 0) {
-	       if(mOption) //m옵션추가
-		  modify_scoreTable(filename);
-	       read_scoreTable(filename);
+		//점수 테이블 파일(score_table.csv)이 존재하는 경우
+		if (mOption) //m옵션이 사용된 경우
+			modify_scoreTable(filename); //문제 점수 변경 함수 호출
+		read_scoreTable(filename); //m옵션 유무와 상관없이 점수테이블 읽기함수 호출(읽어온 정보를 현재 프로그램 내 구조체에 저장)
 	}
 	else{
 		make_scoreTable(ansDir);
@@ -250,31 +255,34 @@ void set_scoreTable(char *ansDir)
 }
 
 int get_qnametype(char *qname) {
-
-    ////////////////////////////////내가만든함수
     ////파라미터로 받은 문제이름 검색해서 어떤 파일타입인지 리턴
+	//파라미터 : 사용자가 입력한 수정할 문제 이름
+	//리턴값 : 성공시 입력받은 문제의 파일타입(TEXTFILE(3) or CFILE(4)), 실패시 false
     FILE *fp;
     char qtmp[BUFLEN];
     char stmp[BUFLEN];
     int filetype;
     char *p;
 
-    if((fp = fopen("score_table.csv", "r")) == NULL) {
+    if((fp = fopen("score_table.csv", "r")) == NULL) {	//점수 테이블 파일 오픈 
+		//실패시 에러메시지 출력 후 false 리턴
         fprintf(stderr, "file open error for score_table.csv\n");
         return false;
     }
 
-    while(fscanf(fp, "%[^,],%s\n", qtmp, stmp) != EOF) {
-        if((p = strstr(qtmp, qname)) != NULL) {
-	   filetype = get_file_type(qtmp);
-	   return filetype;
-        }
+    while(fscanf(fp, "%[^,],%s\n", qtmp, stmp) != EOF) { //파일의 끝까지 내용을 한 줄씩(한 문제씩)읽는 반복문
+		//파일의 한줄을 읽어 문제이름은 qtmp, 점수는 stmp에 저장
+		if ((p = strstr(qtmp, qname)) != NULL) {
+			//파라미터로 전달받은(사용자가 입력한 문제이름)과 동일한 문제를 찾은경우
+			filetype = get_file_type(qtmp); //get_file_type()호출하여 얻은 값 filetype 변수에 저장
+			return filetype; //filetype 리턴
+		}
     }
-    return false;
+    return false; //일치하는 문제가 없는 경우 false 리턴
 }
 double get_score(char *qname) {
-    //////////////////////////////////////////////////////////
-    //내가 만든 함수 : 파라미터로 입력받은 문자열에 해당하는 점수테이블의 현재 점수 리턴//////
+	//파라미터 : 사용자로부터 입력받은 변경할 문제의 이름
+    //리턴값 : 성공시 점수 테이블 파일에 있는 파라미터 문제의 현재 점수, 실패시 false(0)
     FILE *fp;
     char qtmp[BUFLEN];
     char stmp[BUFLEN];
@@ -282,23 +290,28 @@ double get_score(char *qname) {
     char *p;
 
     if((fp = fopen("score_table.csv", "r")) == NULL) {
+		//점수 테이블 파일 열기
         fprintf(stderr, "file open error for score_table.csv\n");
         return false;
     }
 
     while(fscanf(fp, "%[^,],%s\n", qtmp, stmp) != EOF) {
+		//한 줄씩(한 문제씩)읽어 입력받은 문제에 해당하는 문제가 있는지 확인하여 점수를 리턴하는 반복문
         if((p = strstr(qtmp, qname)) != NULL) {
-	       score = atof(stmp);
-	       return score;
+			//동일한 문제이름을 찾은 경우
+	       score = atof(stmp); //그 문제의 현재점수를 실수화하여 score변수에 저장
+	       return score; //score 리턴
         }
     }
+	//해당하는 문제와 동일한 문제를 못찾은 경우 false 리턴
     return false;    
     
 }
 
 int modify_scoreTable(char *path)
-{ ///////////////////////////////////내가 만든 함수
-    ////////////////////////////////////
+{ 
+	//파라미터 : 점수 테이블파일(score_table.csv)의 경로
+	//리턴 값 : 성공시 true, 실패시 false
     FILE *fp;
     FILE *fp2;
     char tmp[FILELEN];
@@ -309,81 +322,71 @@ int modify_scoreTable(char *path)
     int num;
     int i=0;
     int filetype;
-    char qname[FILELEN];
-    char score[FILELEN];
     char *p;
     int is_found=false;
    
     if((fp = fopen(path, "r")) == NULL) {
+		//점수 테이블 파일을 읽을 파일 포인터
         fprintf(stderr, "file open error for %s\n", path);
         return false;
     }
     
     if((fp2 = fopen(path, "r+")) == NULL) {
+		//점수 테이블 파일을 작성할 파일 포인터
         fprintf(stderr, "file open error for %s\n", path);
         return false;
     }
 
 
     while(1) {
-        
-        printf("Input question's number to modify >> ");
-        scanf("%s", qtmp);
-        if(!strcmp(qtmp,"no"))
-	   break;
-        scur = get_score(qtmp);
-        if(scur == 0) { //해당문제 못찾은 경우
-	   printf("%s question not found\n",path);
-	   return false;
-        }
-        printf("Current score : %.2lf\n",scur);
+		//사용자가 문제 이름에 "no"를 입력할 때 까지 문제 이름을 입력받은 후 수정할 점수를 입력받아 scroe_mod 배열에 저장하는 반복문
+
+		printf("Input question's number to modify >> ");
+		scanf("%s", qtmp); //변경할 문제 번호 입력
+		if (!strcmp(qtmp, "no")) //no이면 반복 종료
+			break;
+		scur = get_score(qtmp); //변경할 문제의 현재 점수를 리턴하는 함수 호출하여 scur에 저장
+		if (scur == 0) { //사용자가 입력한 문제가 점수테이블 파일에 없는 경우
+			printf("%s question not found\n", path); 
+			return false; //return false
+		}
+        printf("Current score : %.2lf\n",scur); //scur에 저장된 현재(수정전)점수 출력
         printf("New score : ");
-        scanf("%lf", &stmp);
-        filetype = get_qnametype(qtmp); //입력받은 문제의 타입찾기 후, 완전한 문제이름으로 만들기
-        if(filetype == TEXTFILE) 
-	   strcat(qtmp,".txt");
-        else if(filetype == CFILE) 
-	   strcat(qtmp, ".c");	  
+        scanf("%lf", &stmp); //사용자로부터 변경할 점수 입력받아 stmp에 저장
+        filetype = get_qnametype(qtmp); //입력받은 문제의 파일 종류를 리턴하는 함수 호출해 filetype에 저장 
+        if(filetype == TEXTFILE) //.txt파일인 경우 
+	    strcat(qtmp,".txt"); //완전한 문제이름으로 만들기
+        else if(filetype == CFILE) //.c파일인 경우
+	    strcat(qtmp, ".c");	  //완전한 문제이름으로 만들기
 
-        //score_mod[i].qname = qtmp;
-        strcpy(score_mod[i].qname, qtmp);
-        score_mod[i].score = stmp;
-        i++;
+        strcpy(score_mod[i].qname, qtmp); //수정될 문제의 이름 저장
+        score_mod[i].score = stmp; //수정될 점수 저장
+        i++; //수정될 문제의 개수를 세기 위한 인덱스 증가
         
-        /*
-        for(i=0; i<num; i++){ //문제이름으로 채점테이블구조체 배열의 내용 변경
-	   printf("현재 이름 : %s\n", score_table[i].qname);
-	   if(strstr(score_table[i].qname, qname) != NULL){
-	       score_table[i].score = stmp;
-	       printf("바뀐 테이블 점수 - score_table[%d].score : %.2lf\n",i,score_table[i].score);
-	   }
-        }*/
-
     }
-    num = i;
+    num = i; //수정될 문제의 개수 num에 저장
    
-    for(int i=0; i<num; i++) {
-        printf("%s : %.2lf\n",score_mod[i].qname, score_mod[i].score);
-    }
-    while(fscanf(fp, "%s\n", tmp) != EOF) {
-        strcpy(tmp2, tmp);
-        is_found = false;
-        p = strtok(tmp2, ",");
-        for(i=0; i<num; i++) {
-	   if(strstr(score_mod[i].qname, p) != NULL) {
-		  is_found=true;
-		  fprintf(fp2, "%s,%.2f\n", score_mod[i].qname, score_mod[i].score);
-	   }
-         }
-        if(!is_found)
-	   fprintf(fp2, "%s\n", tmp);	
+    while(fscanf(fp, "%s\n", tmp) != EOF) { //변경된 점수를 점수 테이블 파일에 작성하는 반복문
+		//점수 테이블 파일의 한 줄 읽어오기
+		strcpy(tmp2, tmp); //읽어온 내용 tmp2에 복사
+		is_found = false; //수정되어야 할 문제가 있는지 확인하는 변수 false로 초기화
+		p = strtok(tmp2, ","); //문제이름 읽어 p가 가리키게 함
+		for (i = 0; i < num; i++) {
+			//수정될 문제와 동일한 이름인지 확인하는 반복문
+			if (strstr(score_mod[i].qname, p) != NULL) {
+				//수정될 문제와 동일한 문제일 경우
+				is_found = true; //is_found변수에 true 대입
+				fprintf(fp2, "%s,%.2f\n", score_mod[i].qname, score_mod[i].score);
+				//해당하는 파일의 위치에 fp2로 변경될 점수로 수정
+			}
+		}
+		if (!is_found) //수정될 문제가 아닌경우
+			fprintf(fp2, "%s\n", tmp); //fp2의 포인터 이동을 위해 한줄 읽어 tmp에 저장(해당 tmp는 의미없음)
 
-   }
-
-fclose(fp);
-fclose(fp2);
-    
-
+	}
+	fclose(fp);
+	fclose(fp2);
+	return true; //성공적으로 파일을 수정한 경우 true 리턴
 }
 void read_scoreTable(char *path)
 {
@@ -411,7 +414,6 @@ void make_scoreTable(char *ansDir)
 	double score, bscore, pscore;
 	struct dirent *dirp;
 	DIR *dp;
-	//struct stat statbuf;
 	char tmp[BUFLEN];
 	int idx = 0;
 	int i;
@@ -432,7 +434,7 @@ void make_scoreTable(char *ansDir)
 	}	
 
 	while((dirp = readdir(dp)) != NULL)
-	{      //ansDir디렉토리 내에 바로 정답 파일들이 존재하기 때문에, 또 디렉토리를 검색할 필요가 없음
+	{   //ansDir디렉토리 내에 바로 정답 파일들이 존재하기 때문에, 또 디렉토리를 검색할 필요가 없음
 		if(!strcmp(dirp->d_name, ".") || !strcmp(dirp->d_name, ".."))
 			continue;
 
@@ -440,19 +442,7 @@ void make_scoreTable(char *ansDir)
 			continue;
 
 		strcpy(score_table[idx++].qname, dirp->d_name);
-		
 	}
-		/*if (stat(tmp, &statbuf) < 0) {
-		    fprintf(stderr, "stat error for %s\n", tmp);
-		    return;
-		}
-	       
-		if (((statbuf.st_mode) &S_IFMT) != S_IFREG) {
-		    continue;
-		}
-
-		strcpy(socre_table[idx++].qname, */
-
 
 	closedir(dp);
 	sort_scoreTable(idx);
@@ -485,11 +475,10 @@ void write_scoreTable(char *filename)
 	int i;
 	int num = sizeof(score_table) / sizeof(score_table[0]);
 
-
-        if ((fd = creat(filename, 0666)) < 0){
+	if ((fd = creat(filename, 0666)) < 0) {
 		fprintf(stderr, "creat error for %s\n", filename);
 		return;
-        }
+	}
 
 	for(i = 0; i < num; i++)
 	{
@@ -882,7 +871,6 @@ double compile_program(char *id, char *filename)
 	memcpy(qname, filename, strlen(filename) - strlen(strrchr(filename, '.')));
 	
 	isthread = is_thread(qname);
-
 	sprintf(tmp_f, "%s/%s", ansDir, filename);
 	sprintf(tmp_e, "%s/%s.exe", ansDir, qname);
 
@@ -1107,6 +1095,7 @@ void rmdirs(const char *path)
 	struct stat statbuf;
 	DIR *dp;
 	char tmp[50];
+	char dtmp[50];
 	
 	if((dp = opendir(path)) == NULL)
 		return;
@@ -1116,7 +1105,8 @@ void rmdirs(const char *path)
 		if(!strcmp(dirp->d_name, ".") || !strcmp(dirp->d_name, ".."))
 			continue;
 
-		sprintf(tmp, "%s/%s", path, dirp->d_name);
+		strcpy(dtmp, dirp->d_name); //strcpy()로 먼저 디렉토리 이름 저장 후, 아래 코드 실행
+		sprintf(tmp, "%s/%s", path, dtmp); //이부분에서 warning 발생해서 코드 고침
 
 		if(lstat(tmp, &statbuf) == -1)
 			continue;
