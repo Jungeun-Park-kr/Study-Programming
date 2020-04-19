@@ -57,13 +57,13 @@ pid_t inBackground(char *name);
 double check_error_warning(char *filename);
 int compare_resultfile(char *file1, char *file2);
 
-void do_iOption(char (*ids)[FILELEN]);
+void do_iOption(char (*ids)[FILELEN]); //내가만든함수
 int is_exist(char (*src)[FILELEN], char *target);
 
 int is_thread(char *qname);
 void redirection(char *command, int newfd, int oldfd);
 int get_file_type(char *filename);
-void rmdirs(const char *path);
+void rmdirs(const char *path); //수정한 함수
 void to_lower_case(char *c);
 
 int get_qnametype(char *qname); //내가만든함수
@@ -71,7 +71,7 @@ double get_score(char *qname); //내가만든함수
 void set_scoreTable(char *ansDir); //수정한 함수
 void read_scoreTable(char *path);
 void make_scoreTable(char *ansDir); //수정한 함수
-void modify_scoreTable(char *path); //내가만든함수
+int modify_scoreTable(char *path); //내가만든함수
 void write_scoreTable(char *filename);
 void set_idTable(char *stuDir);
 int get_create_type();
