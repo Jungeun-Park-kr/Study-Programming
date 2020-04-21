@@ -20,7 +20,8 @@ int dd_read(int ppn, char *pagebuf);
 int dd_write(int ppn, char *pagebuf);
 int dd_erase(int pbn);
 
-int isEmpty(char *pagebuf); //의미있는 데이터가 있는지 확인하는 함수
+int isEmpty(char *pagebuf); //페이지에 의미있는 데이터가 있는지 확인하는 함수
+int isEmptyBlock(int pbn); //블록에 의미있는 데이터가 있는지 확인하는 함수
 
 int main(int argc, char *argv[])
 {
@@ -29,7 +30,7 @@ int main(int argc, char *argv[])
 	char *blockbuf;
 	char initialbuf[SECTOR_SIZE];
 	char tmp[PAGE_SIZE];
-	int pages, ppn;
+	int pages, ppn, pbn;
 	int i, j;
 	memset(initialbuf, (char)0xFF, SECTOR_SIZE); //0xFF로만 이루어진 initial buf 배열 초기화
 
@@ -92,19 +93,83 @@ int main(int argc, char *argv[])
 			fprintf(stderr, "open error for %s\n", argv[2]);
 			exit(1);
 		}
+        ppn = atoi(argv[3]);
+        /* 구현해야 할 것 : out-of-place update
+         * 입력받은 ppn의 내용을 읽어와 pagebuf에 저장 후 isEmpty()로 데이터가 있는지 확인 ->
+         * isEmpty() - True : 입력받은 내용 바로 쓰기
+         * isEmpty() - False : 해당 ppg에서 제일 가까운 순서대로 비어있는 블록을 찾음
+         *                      -> 비어있는 블록에 ppn이 속한 블록(ppn제외) 복사
+         *                      -> erase()로 원래 블록 내용 삭제
+         *                      -> 복사해둔 데이터 다시 옮기기
+         *                      -> 입력받은 ppn에 입력받은 데이터 쓰기
+         *                      -> erase()복사해뒀던 데이터 블록의 내용 삭제*/
+        
+        //pagebuf에 입력받은 데이터 저장
 		strcpy(sectorbuf, argv[4]); //입력받은 sectordata 복사
 		strncat(sectorbuf, initialbuf, (SECTOR_SIZE - strlen(sectorbuf))); //공간이 남은경우 0xFF로 채움 
 		strcpy(pagebuf, sectorbuf); //pagebuf에 sectordata 붙이기
-
 		strcat(pagebuf + SECTOR_SIZE, argv[5]); //pagebuf에 입력받은 sparedata붙이기
 		strncat(pagebuf, initialbuf, (PAGE_SIZE - SECTOR_SIZE + strlen(argv[5]))); //공간 남은경우 0xFF로 채움
 
-		if (dd_write(atoi(argv[3]), pagebuf) == -1) { //페이지에 해당내용 쓰기
-			fprintf(stderr, "write error\n");
-			exit(1);
-		}
-		fclose(flashfp);
-		return 0;
+        memset(tmp, 0, PAGE_SIZE);
+        dd_read(ppn, tmp);
+
+        if (isEmpty(tmp)) { //페이지에 내용이 없는경우
+		    if (dd_write(ppn, pagebuf) == -1) { //페이지에 해당내용 쓰기
+			    fprintf(stderr, "write error\n");
+			    exit(1);
+		    }
+		    fclose(flashfp);
+		    return 0;
+        }
+
+        else { //기존 데이터가 존재하는 경우 - out-of-place update
+            pbn = ppn/4 + 1; //현재블락 다음부터 비어있는 블록을 찾음 (데이터 임시 복사를 위해)
+            while(1){
+                if(isEmptyBlock(pbn)) //비어있는 블록 찾음
+                    break;
+                else
+                    pbn += 1;
+            }
+            //pbn : 비어있는 블록, ppn : 내가 데이터 쓸 페이지
+            int curpbn = ppn/4; //데이터를 쓸 블록
+            int curppn = curpbn*4; //데이터를 쓸 블록의 첫 페이지
+            int tmppn = pbn*4; //데이터를 복사해둘 페이지(해당 블록의 첫 페이지)
+            //pbn에 데이터 옮기기
+            for (i = curppn,j = tmppn; i < curppn+4; i++,j++) {
+                if (i==ppn) //내가 데이터를 써야할 페이지데이터는 복사하면 안됨
+                    continue;
+                else {
+                    memset(tmp, 0, PAGE_SIZE);
+                    dd_read(i, tmp);
+                    if(!isEmpty(tmp)) //데이터가 있는 페이지만 복사
+                        dd_write(j,tmp); //내용복사
+                }
+            }
+           //erase()로 원래 블록의 데이터 삭제하기
+            dd_erase(curpbn);
+            //복사해둔 데이터 옮기기
+            for (i = curppn,j=tmppn ; i < curppn+4; i++,j++) {
+                if (i==ppn)
+                    continue;
+                else {
+                    memset(tmp, 0, PAGE_SIZE);
+                    dd_read(j, tmp);
+                    if(isEmpty(tmp))
+                        dd_write(i, tmp);
+                }
+            }
+            //입력받은 내용 write
+		    if (dd_write(ppn, pagebuf) == -1) { //페이지에 해당내용 쓰기
+			    fprintf(stderr, "write error\n");
+			    exit(1);
+		    }
+            //카피했던 데이터 블록의 내용 삭제
+            dd_erase(pbn);
+
+		    fclose(flashfp);
+		    return 0;
+        }
 	}
 
 	//페이지 읽기: pagebuf를 인자로 사용하여 해당 인터페이스를 호출하여 페이지를 읽어 온 후 여기서 섹터 데이터와스페어 데이터를 분리해 낸다
@@ -179,4 +244,18 @@ int isEmpty(char *pagebuf) { //pagebuf 문자열에 의미있는 데이터가 �
 			return false;
 	}
 	return true;
+}
+
+int isEmptyBlock(int pbn) {
+    //파라미터로 받은 bpn에 있는 모든 page가 비어있는지 확인
+    //반환값 : 비어있는 경우 -> true, 데이터가 있는경우 - False 리턴
+    int ppn = pbn * 4;
+    char tmpbuf[PAGE_SIZE];
+    for(int i = ppn; i < ppn+4; i++) {
+        memset(tmpbuf, 0, PAGE_SIZE);
+        dd_read(i, tmpbuf);
+        if(!isEmpty(tmpbuf))
+            return false;
+    }
+    return true;
 }
