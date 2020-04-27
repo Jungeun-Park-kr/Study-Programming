@@ -6,9 +6,9 @@
 
 #include <stdio.h>
 #include <string.h>
-#include "flash.h"
+#include "sectormap.h"
 
-extern FILE *flashfp;				// ftlmgr.c에 정의되어 있음
+extern FILE *flashfp;
 
 int dd_read(int ppn, char *pagebuf)
 {
