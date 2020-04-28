@@ -32,6 +32,10 @@ int main(void) {
     ftl_open();
     sprintf(sectorbuf, "first sector data!");
     ftl_write(3, sectorbuf);
-
-    ftl_print();  
+    sprintf(sectorbuf, "second sector data~");
+    ftl_write(5, sectorbuf);
+    sprintf(sectorbuf, "third sector data:)");
+    ftl_write(7, sectorbuf);
+    sprintf("fourth sector data on lpn3!!@@$%#");
+    ftl_print(3, sectorbuf);  
 } 
