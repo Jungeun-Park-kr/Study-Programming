@@ -6,162 +6,200 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <sys/types.h>
 #include "sectormap.h"
-// 필요한 경우 헤더 파일을 추가하시오.
-typedef struct {
-    int pbn; //pbn(struct 배열의 인덱스와 같음)
-    int full; //이 block내에 valid sector 개수 (꽉 찼는지 확인위해 필요)
-    int isn; //block 내의 invalid sector 개수 (garbage blcok인지 확인위해 필요)
-} BlockInformationTable;
-//
-// flash memory를 처음 사용할 때 필요한 초기화 작업, 예를 들면 address mapping table에 대한
-// 초기화 등의 작업을 수행한다. 따라서, 첫 번째 ftl_write() 또는 ftl_read()가 호출되기 전에
-// file system에 의해 반드시 먼저 호출이 되어야 한다.
-//
 
-BlockInformationTable BIT[BLOCKS_PER_DEVICE]; //삭제할 블록을 관리하기 위한 block Information Table 배열 생성
-int AMT[DATAPAGES_PER_DEVICE][2]; //(free block제외) 실  Data 페이지 개수의 행, 2개의 열을 가진 Address Mapping Table을 선언
+struct AddressMappingTable {
+    int lsn;
+    int psn;
+};
 
-FILE *flashfp;
+struct BlockInformationTable {
+    int pbn;
+    int full;
+    int isn;
+};
+
+struct AddressMappingTable AMT[DATAPAGES_PER_DEVICE];
+struct BlockInformationTable BIT[BLOCKS_PER_DEVICE];
+int freePBN;
+
+//extern struct SpareData;
+int dd_write(int ppn, char *pagebuf);
+int dd_read(int ppn, char *pagebuf);
+int dd_erase(int pbn);
+
+void ftl_open();
+void ftl_read(int lsn, char *sectorbuf);
+void ftl_write(int lsn, char *sectorbuf);
+SpareData set_spare(int lsn, int is_invalid, char *dummy);
+void spare_to_str(char *dest, SpareData spare);
+void erase_garbage_block();
+int search_empty_psn();
+void ftl_print();
+
 
 void ftl_open()
-{
-	// address mapping table 초기화
-	// free block's pbn 초기화
-    // address mapping table에서 lbn 수는 DATABLKS_PER_DEVICE 동일
-	int i;
-    for (i = 0; i < DATAPAGES_PER_DEVICE; i++) {
-        AMT[i][0] = i;
-        AMT[i][1] = -1;
+{   
+    printf("ftl_open() 실행\n");
+    int i;
+    for(i = 0; i <= DATAPAGES_PER_DEVICE; i++) {
+        AMT[i].lsn = i;
+        AMT[i].psn = -1;
     }
-    for (i = 0; i < BLOCKS_PER_DEVICE; i++) {
+    for(i = 0; i < BLOCKS_PER_DEVICE; i++) {
         BIT[i].pbn = i;
         BIT[i].full = 0;
         BIT[i].isn = 0;
     }
-	return;
+    freePBN = BIT[BLOCKS_PER_DEVICE-1].pbn; //최초 파일 생성시 마지막 pbn이 free block임
+
+    return;
 }
 
-//
-// 이 함수를 호출하기 전에 이미 sectorbuf가 가리키는 곳에 512B의 메모리가 할당되어 있어야 한다.
-// 즉, 이 함수에서 메모리를 할당받으면 안된다.
-//
-void ftl_read(int lsn, char *sectorbuf) //파라미터 sectorbuf는 읽어온 sector data가 저장될 공간!
+void ftl_read(int lsn, char *sectorbuf)
 {
-    /*
-     * 1. lsn에 매핑되는 psn을 가져온다 (매핑 테이블에 없는경우, no data임을 리턴한다)
-     * 2. psn에 저장된 데이터를 읽어와 버퍼에 저장한다.
-     * 3. 버퍼에 저장된 내용 중 sector영역의 데이터만을 sectorbuf에 저장한다
-     */
+    char pagebuf[PAGE_SIZE];
+    int psn = -1;
+    int i;
+    for (i = 0; i < DATABLKS_PER_DEVICE; i++)
+        if(AMT[i].lsn == lsn)
+            psn = AMT[i].psn;
+
+    if(psn == -1) {
+        fprintf(stderr, "no data in lsn(%d)\n", lsn);
+        exit(1);
+    }
+    memset(pagebuf, 0, PAGE_SIZE);
+    dd_read(psn, pagebuf);
+    memcpy(sectorbuf, pagebuf, SECTOR_SIZE);
+
 	return;
 }
 
 
 void ftl_write(int lsn, char *sectorbuf)
 {
-
-    /* <이 함수가 호출된 경우, dd_write()호출 전에 할 작업>
-     * 
-     * 1.빈 블록(free block)이 한 개 이상 존재하는가?
-     * 2.한 개의 빈 블록(free block)을 제외하고, 빈 섹터가 존재하는가?
-     * => 이 두가지 조건 만족시 : write() 수행.
-     *                   아니면 : merge() 수행 후, write()수행
-     */
-
-    /* 1. lsn에 매핑되는 ppn값을 확인한다
-     * 2-1. ppn이 -1인 경우 : lpn5에는 최초 쓰기 작업
-     * 2-2. ppn이 -1 아닌경우 : 이미 존재하는 데이터를 update 해야함
-     * 3. 비어있는 ppn 중 하나를 선택해 테이블을 갱신한다.
-     * 4. 
-     */
-
-    //아래는 스도코드
-    freenum = countFreeBlock();
-    emptyPSN = searchEmptyPSN();
-    if (emptyPSN exists && freenum >=1) {
-        Search LSN from AMT;
-        if (LST exists in AMT) {
-            Mark the PSN mapped to LSN as invalid(*);
-            Call Update_BIT(PSN);
+    
+    char pagebuf[PAGE_SIZE];
+    char sparebuf[SPARE_SIZE];
+    char dummy[SPARE_SIZE-8];
+    memset(dummy, 0xFF, SPARE_SIZE-8);
+    memset(pagebuf, 0, PAGE_SIZE);
+    memset(sparebuf, 0, SPARE_SIZE);
+    int emptyPSN = search_empty_psn();
+    
+    SpareData spare;
+    printf("ftl wirte 실행은됨, emptypsn : %d\n",emptyPSN);
+    if (emptyPSN >= 0) { //free block 제외, 빈 섹터 있는경우    
+        if((AMT[lsn].lsn == lsn) && (AMT[lsn].psn != -1)) { //update 해야 하는경우 : 기존데이터 invalid 후 write()
+            dd_read(AMT[lsn].psn, pagebuf);
+            memcpy(sparebuf, pagebuf+SECTOR_SIZE, SPARE_SIZE);
+            spare = set_spare(lsn, TRUE, sparebuf+SECTOR_SIZE);
+            BIT[AMT[lsn].psn/PAGES_PER_BLOCK].isn++;
+            
+            spare_to_str(sparebuf, spare);
+            memcpy(pagebuf+SECTOR_SIZE, sparebuf, SPARE_SIZE);
+            dd_write(AMT[lsn].psn, pagebuf); //기존에 있던 pbn을 invalid로 재저장
         }
-        Write Data to EmptyPSN;
-        Call Update_AMT (LSN, EmptyPSN);
+        //빈 psn에 처음 쓰는 경우 바로 write()
+        AMT[lsn].psn = emptyPSN;
+        spare = set_spare(lsn, FALSE, dummy);
+        spare_to_str(sparebuf, spare);
+                
+        memcpy(pagebuf, sectorbuf, SECTOR_SIZE);
+        memcpy(pagebuf+SECTOR_SIZE, sparebuf, SPARE_SIZE);
+        printf("pagebuf:%s, 크기 : %ld\n", pagebuf,sizeof(pagebuf));
+        BIT[AMT[lsn].psn/PAGES_PER_BLOCK].full++;
+        ftl_print();
+        printf("dd_Write()전 - emptyPSN : %d\n", emptyPSN);
+        if(dd_write(emptyPSN, pagebuf) == -1) {
+            fprintf(stderr, "fwrite error\n");
+            exit(1);
+        }
+        printf("ftl_write 성공!\n");
+        return ;
     }
-    else { //빈 섹터 없는경우, garbage block을 merge한 후, write함
-        merge_blocks();
-        ftl_write(LSN, Data);
+    
+    else { //빈 섹터가 없는 경우 : garbage block을 erase하고 wrte함
+        erase_garbage_block();
+        ftl_write(lsn, sectorbuf);
     }
-
+    printf("ftl_write 성공!\n");
 	return;
+}
+
+SpareData set_spare(int lsn, int is_invalid, char *dummy) { //파라미터로 입력한 spare data의 구성요소를 spareData구조체로 만들어줌
+    SpareData spare;
+
+    printf("set_spare() 함수 호출성공\n");
+    spare.lpn = lsn;
+    spare.is_invalid = is_invalid;
+    printf("대입까지성공\n");
+    printf("파라미터 더미  : %s\n", dummy);
+    strncpy(spare.dummy, dummy, 8);
+    printf("dummydata 복사성공\n");   
+    return spare;
+}
+
+void spare_to_str(char *dest, SpareData spare){ //spareData구조체의 멤버들을 문자열에 저장되도록 변경해 dest에 저장.
+    sprintf(dest, "%d%d%s", spare.lpn, spare.is_invalid, spare.dummy);
+    
+    return;
+}
+
+void erase_garbage_block() { //garbage block의 valid sector를 freeblock으로 이동시킨 후, garbage block을 삭제하는 함수
+    int garbagePBN, maxISN = -1;
+    int i, j=0, sppn, eppn;
+    char pagebuf[PAGE_SIZE];
+    int isInvalid;
+    char tmpbuf[PAGE_SIZE];
+
+    for (i = 0; i < DATABLKS_PER_DEVICE; i++)
+        if (BIT[i].isn > maxISN) {
+            garbagePBN = BIT[i].pbn;
+            maxISN = BIT[i].isn;
+        }
+    //free block 제외시 만약 남은 sector가 없는데 wrtie()요청이 들어온다면??? 
+    // ====> error 처리 해야함!!!!!
+    sppn = garbagePBN*PAGES_PER_BLOCK;
+    eppn = (garbagePBN+1)/PAGES_PER_BLOCK;
+    for (i = sppn; i < eppn; i++) {
+        dd_read(i, pagebuf);
+        memcpy(&isInvalid, pagebuf+SECTOR_SIZE+4, sizeof(int));
+        if(!isInvalid) { //valid한 데이터일 경우
+            dd_write(freePBN*4+j, pagebuf);
+            j++;
+        }
+    }
+    BIT[freePBN].full = j;
+    dd_erase(garbagePBN);
+    freePBN = garbagePBN;
+    BIT[freePBN].full = 0;
+    BIT[freePBN].isn = 0;
+}
+
+int search_empty_psn() { //free block을 제외하고, 빈 sector가 있으면 해당 psn을 리턴. 없으면 FALSE리턴
+    int i;
+    printf("search_empty()\n");
+    for (i = 0; i < DATABLKS_PER_DEVICE; i++) {
+        if (AMT[i].psn == -1)
+            return AMT[i].lsn;
+    }
+    return FALSE;
 }
 
 void ftl_print()
 {
     int i, j;
+    
     printf("%3s %3s\n", "lpn", "ppn");
+
     for(i = 0; i < DATAPAGES_PER_DEVICE; i++) {
-        printf("%3d %3d\n", i, AMT[i][1]);
+        printf("%3d %3d\n", AMT[i].lsn, AMT[i].psn);
     }
-    printf("free block's pbn = %d\n", BLOCKS_PER_DEVICE);
+    printf("free block's pbn = %d\n", freePBN);
+
 	return;
 }
-
-//추가 구현할 함수들
-void merge_blocks(){ //victim block 2개를 선정해 merge한다.
-    
-    FreePBN = SelectFreeBlock(); //full이 0인 block
-    VictimPBN = select_garbage_block();
-    for (each sector in VictimPBN) //victim블록의 섹터데이터가 valid한것만 free 블록에 copy
-       if (data of PSN is valid) then
-           CopyData (PSN, FreePBN)
-               Call Update_SMT();
-        
-    dd_erase(VictimPBN);
-    Call Update_BIT();
-    return;
-}
-
-void select_garbage_block() {
-
-    for (each PBN in Block Information Table)
-        VictimPBN = SearchMaxISN //isn이 가장 큰 블록을 찾음
-        
-    return VictimPBN;
-}
-
-/*
-int main(void) {
- 
-    char *fname = "flashMemory";
-    char pagebuf[PAGE_SIZE];
-    char sectorbuf[SECTOR_SIZE];
-    char sparebuf[SPARE_SIZSE];
-    int i, pageNum;
- 
-    //flash memory file 생성 및 초기화
-    if((flashfp = fopen(fname, "w+")) == NULL) {
-        fprintf(stderr, "fopen error for %s\n",fname);
-        exit(1);
-    }
-    memset(pagebuf, (char)0xFF, PAGE_SIZE);
-    pageNum = BLOCKS_PER_DEVICE * PAGES_PER_BLOCK;
-    for (i = 0; i < pageNum; i++) {
-        if (dd_write(i, pagebuf) == -1) {
-            fprintf(stderr, "fwrite error\n");
-            exit(1);
-        }
-    }
-    //fclose(flashfp);
-    
-    ftl_open();
-    sprintf(sectorbuf, "first sector data!");
-    ftl_write(3, sectorbuf);
-    sprintf(sectorbuf, "second sector data~");
-    ftl_write(5, sectorbuf);
-    sprintf(sectorbuf, "third sector data:)");
-    ftl_write(7, sectorbuf);
-    sprintf("fourth sector data on lpn3!!@@$%#");
-    ftl_print(3, sectorbuf);
-}
-*/

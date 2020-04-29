@@ -32,7 +32,7 @@
 //
 typedef struct
 {
-	int lsn;				// page에 데이터를 저장할 때 spare area에 lsn도 같이 저장함
+	int lpn;				// page에 데이터를 저장할 때 spare area에 lpn도 같이 저장함
 	int is_invalid;			// page가 유효한지 그렇지 않은지 판별할 때 사용
 	char dummy[SPARE_SIZE - 8];
 } SpareData;
