@@ -24,8 +24,8 @@ struct BlockInformationTable {
 struct AddressMappingTable AMT[DATAPAGES_PER_DEVICE];
 struct BlockInformationTable BIT[BLOCKS_PER_DEVICE];
 int freePBN;
+int curpsn;
 
-//extern struct SpareData;
 int dd_write(int ppn, char *pagebuf);
 int dd_read(int ppn, char *pagebuf);
 int dd_erase(int pbn);
@@ -42,7 +42,6 @@ void ftl_print();
 
 void ftl_open()
 {   
-    printf("ftl_open() 실행\n");
     int i;
     for(i = 0; i <= DATAPAGES_PER_DEVICE; i++) {
         AMT[i].lsn = i;
@@ -61,18 +60,19 @@ void ftl_open()
 void ftl_read(int lsn, char *sectorbuf)
 {
     char pagebuf[PAGE_SIZE];
+    /*
     int psn = -1;
     int i;
     for (i = 0; i < DATABLKS_PER_DEVICE; i++)
         if(AMT[i].lsn == lsn)
             psn = AMT[i].psn;
-
-    if(psn == -1) {
+    */
+    if(AMT[lsn].psn == -1) {
         fprintf(stderr, "no data in lsn(%d)\n", lsn);
         exit(1);
     }
     memset(pagebuf, 0, PAGE_SIZE);
-    dd_read(psn, pagebuf);
+    dd_read(AMT[lsn].psn, pagebuf);
     memcpy(sectorbuf, pagebuf, SECTOR_SIZE);
 
 	return;
@@ -88,16 +88,17 @@ void ftl_write(int lsn, char *sectorbuf)
     memset(dummy, 0xFF, SPARE_SIZE-8);
     memset(pagebuf, 0, PAGE_SIZE);
     memset(sparebuf, 0, SPARE_SIZE);
-    int emptyPSN = search_empty_psn();
-    
+    int emptyPSN = search_empty_psn(); 
+    //printf("emptyPSN : %d\n", emptyPSN);
     SpareData spare;
-    printf("ftl wirte 실행은됨, emptypsn : %d\n",emptyPSN);
-    if (emptyPSN >= 0) { //free block 제외, 빈 섹터 있는경우    
+    
+    if (0 <= emptyPSN && emptyPSN < DATAPAGES_PER_DEVICE) { //free block 제외, 빈 섹터 있는경우    
         if((AMT[lsn].lsn == lsn) && (AMT[lsn].psn != -1)) { //update 해야 하는경우 : 기존데이터 invalid 후 write()
             dd_read(AMT[lsn].psn, pagebuf);
             memcpy(sparebuf, pagebuf+SECTOR_SIZE, SPARE_SIZE);
             spare = set_spare(lsn, TRUE, sparebuf+SECTOR_SIZE);
             BIT[AMT[lsn].psn/PAGES_PER_BLOCK].isn++;
+            printf("BIT[%d]의 isn : %d\n", AMT[lsn].psn/PAGES_PER_BLOCK, BIT[AMT[lsn].psn/PAGES_PER_BLOCK].isn);
             
             spare_to_str(sparebuf, spare);
             memcpy(pagebuf+SECTOR_SIZE, sparebuf, SPARE_SIZE);
@@ -110,36 +111,27 @@ void ftl_write(int lsn, char *sectorbuf)
                 
         memcpy(pagebuf, sectorbuf, SECTOR_SIZE);
         memcpy(pagebuf+SECTOR_SIZE, sparebuf, SPARE_SIZE);
-        printf("pagebuf:%s, 크기 : %ld\n", pagebuf,sizeof(pagebuf));
         BIT[AMT[lsn].psn/PAGES_PER_BLOCK].full++;
-        ftl_print();
-        printf("dd_Write()전 - emptyPSN : %d\n", emptyPSN);
+        
         if(dd_write(emptyPSN, pagebuf) == -1) {
             fprintf(stderr, "fwrite error\n");
             exit(1);
         }
-        printf("ftl_write 성공!\n");
         return ;
     }
-    
     else { //빈 섹터가 없는 경우 : garbage block을 erase하고 wrte함
         erase_garbage_block();
         ftl_write(lsn, sectorbuf);
     }
-    printf("ftl_write 성공!\n");
 	return;
 }
 
 SpareData set_spare(int lsn, int is_invalid, char *dummy) { //파라미터로 입력한 spare data의 구성요소를 spareData구조체로 만들어줌
     SpareData spare;
 
-    printf("set_spare() 함수 호출성공\n");
     spare.lpn = lsn;
     spare.is_invalid = is_invalid;
-    printf("대입까지성공\n");
-    printf("파라미터 더미  : %s\n", dummy);
     strncpy(spare.dummy, dummy, 8);
-    printf("dummydata 복사성공\n");   
     return spare;
 }
 
@@ -150,44 +142,73 @@ void spare_to_str(char *dest, SpareData spare){ //spareData구조체의 멤버�
 }
 
 void erase_garbage_block() { //garbage block의 valid sector를 freeblock으로 이동시킨 후, garbage block을 삭제하는 함수
+    //printf("erase 실행\n");
     int garbagePBN, maxISN = -1;
     int i, j=0, sppn, eppn;
     char pagebuf[PAGE_SIZE];
-    int isInvalid;
     char tmpbuf[PAGE_SIZE];
+    char sectorbuf[SECTOR_SIZE];
+    int isInvalid;
+    int lpn;
+    SpareData spare;
+    memset(pagebuf, 0, PAGE_SIZE);
+    memset(tmpbuf, 0, PAGE_SIZE);
 
     for (i = 0; i < DATABLKS_PER_DEVICE; i++)
         if (BIT[i].isn > maxISN) {
             garbagePBN = BIT[i].pbn;
             maxISN = BIT[i].isn;
         }
-    //free block 제외시 만약 남은 sector가 없는데 wrtie()요청이 들어온다면??? 
-    // ====> error 처리 해야함!!!!!
+    
+    printf("garbagePBN : %d, maxISN : %d\n", garbagePBN, maxISN);
+
+    if(maxISN == -1) { //free block을 제외하고,invalid sector가 없는데도 erase()요청이 온 경우 => 더 이상 쓸수 있는 자리 없으므로 에러처리
+        fprintf(stderr, "no invaild data!! can't write anymore...\n");
+        exit(1);
+    }
+
     sppn = garbagePBN*PAGES_PER_BLOCK;
-    eppn = (garbagePBN+1)/PAGES_PER_BLOCK;
+    eppn = (garbagePBN+1)*PAGES_PER_BLOCK;
     for (i = sppn; i < eppn; i++) {
         dd_read(i, pagebuf);
-        memcpy(&isInvalid, pagebuf+SECTOR_SIZE+4, sizeof(int));
-        if(!isInvalid) { //valid한 데이터일 경우
+        printf("sectorbuf : %d, %d\n", pagebuf+SECTOR_SIZE, pagebuf+SECTOR_SIZE+4);
+        //memcpy(&spare, pagebuf+SECTOR_SIZE, sizeof(SpareData));
+        memcpy(&lpn, pagebuf+SECTOR_SIZE, sizeof(int));
+        memcpy(&isInvalid , pagebuf+SECTOR_SIZE+4, sizeof(int));
+        //lpn = spare.lpn;
+        //isInvalid = spare.is_invalid;
+        printf("lpn : %d, inInvalid : %d\n", lpn, isInvalid);
+        exit(1);
+        if(isInvalid == 0) { //valid한 데이터일 경우
+            //printf("isInvald : %d", isInvalid);
             dd_write(freePBN*4+j, pagebuf);
+            AMT[lpn].psn = i;
             j++;
         }
     }
     BIT[freePBN].full = j;
+    
     dd_erase(garbagePBN);
     freePBN = garbagePBN;
     BIT[freePBN].full = 0;
     BIT[freePBN].isn = 0;
+    //printf("erawes 완료\n");
 }
 
-int search_empty_psn() { //free block을 제외하고, 빈 sector가 있으면 해당 psn을 리턴. 없으면 FALSE리턴
+int search_empty_psn() { //free block을 제외하고, 빈 sector가 있으면 새로 저장할 psn을 리턴. 없으면 -1리턴
     int i;
-    printf("search_empty()\n");
-    for (i = 0; i < DATABLKS_PER_DEVICE; i++) {
-        if (AMT[i].psn == -1)
-            return AMT[i].lsn;
-    }
-    return FALSE;
+    int max = -99;
+
+    for (i = 0; i < DATAPAGES_PER_DEVICE; i++) //제일 큰 psn번호 찾기
+        if (AMT[i].psn > max)
+            max = AMT[i].psn;
+    max++;
+    //printf("max : %d\n", max);
+    for (i = 0; i < DATAPAGES_PER_DEVICE; i++) //빈 sector있으면 제일 큰 psn 번호 다음 번호 리턴해줌
+        if (AMT[i].psn == -1 && max < DATAPAGES_PER_DEVICE)
+            return max; 
+
+    return -1;
 }
 
 void ftl_print()
