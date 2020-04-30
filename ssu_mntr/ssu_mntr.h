@@ -8,7 +8,12 @@
     #define true 0
 #endif
 
+#ifndef BUFLEN
+	#define BUFLEN 1024
+#endif
+
 void ssu_mntr();
-void doPrompt();
+void do_Prompt();
 void doHelp();
-void doMonitor(char *logFile);
+void do_Monitor(char *logFile);
+pid_t monitor_deamon_init();
