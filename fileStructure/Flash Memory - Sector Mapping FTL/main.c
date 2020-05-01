@@ -79,16 +79,31 @@ int main(void) {
     ftl_write(2, "again 2, foutrh data");
     ftl_write(7, "fifth data");
     ftl_write(8, "sixth data");
-    ftl_write(4, "asdfaef");
-    ftl_write(1, "asefczvxc");
-    ftl_write(5, "klj;lkj");
-    ftl_write(8, "agaitnawe ife");
-    ftl_write(7, "aelskfjlc");
-    ftl_write(3, "latiesjalf");
-    
+    ftl_write(4, "seven asdfaef");
+    ftl_write(1, "eight asefczvxc");
+    ftl_write(5, "nine klj;lkj");
+    ftl_write(8, "ten agaitnawe ife");
+    ftl_write(7, "eleven aelskfjlc");
+    ftl_write(3, "twleven latiesjalf");
+    //printf("12변째완료\n");    
     ftl_print();
-    ftl_write(4, "finally!!");
+    //printf("이제 erase해야함\n");
+    ftl_write(4, "thirteen finally!!");
     ftl_print();
-    
+    ftl_write(2, "fourteen fkjaelsf");
+    ftl_write(4, "fifteen lfasefj");
+    ftl_write(8, "sixteen lfsej");
+    ftl_write(5, "17 laekjf");
+    ftl_write(7, "18 laskejf");
+    ftl_print();
+    ftl_read(7, sectorbuf);
+    printf("read7 ) %s\n", sectorbuf);
+    memset(sectorbuf, 0, SECTOR_SIZE);
+    ftl_read(4, sectorbuf);
+    printf("read4) %s\n", sectorbuf);
+    memset(sectorbuf, 0, SECTOR_SIZE);
+    ftl_read(1, sectorbuf);
+    printf("read1(8) ) %s\n", sectorbuf);  
+    ftl_read(6, sectorbuf);
 
 } 
