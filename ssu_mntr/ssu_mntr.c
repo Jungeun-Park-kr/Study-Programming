@@ -67,12 +67,6 @@ void ssu_mntr() {
 	if (access(infoDir, F_OK)) //info 디렉토리 없는경우 생성
 		mkdir(infoDir, 0753);
 
-	//chdir(workDir);
-	//infoDir 크기확인
-	dsize = getDirSize(infoDir);
-    nowt = time(NULL);
-    tm = *localtime(&nowt);
-	
     if ((dmpid = monitor_deamon_init()) < 0) {
 		fprintf(stderr, "monitor_deamon_init faled\n");
 		exit(1);
@@ -233,10 +227,10 @@ void do_Prompt() {
                 ptr = strtok(NULL, " ");
             }
             if (argc < 2) {
-                fprintf(sterr, "usage : RECOVER [FILENAME] [OPTION]\n");
+                fprintf(stderr, "usage : RECOVER [FILENAME] [OPTION]\n");
                 continue;
             }
-			doRecover(int argc, argv);
+			doRecover(argc, argv);
 		}
 		else if (strstr(command, "tree") != NULL) {
 			doTree();
@@ -268,51 +262,6 @@ char *ltrim(char *str) {
         ++start;
     str = start;
     return str;
-}
-
-int intoCheck(char *fname, char *pathname) {
-    //pathname : 새이름, fname : 파일 이름만
-    char buf[BUFLEN];
-    sprintf(buf, "%s/%s", infoDir, fname);
-    if (remove(buf, pathname) <0) {
-        fprintf(stderr, "remove error\n");
-        return false;
-    }
-    return true;
-}
-
-void doRecover(int argc, char *argv[7]) {
-    char tmp[BUFLEN];
-    char fname[BUFLEN];
-    char pathname[BUFLEN];
-    char buf[BUFLEN];
-    int i;    
-    FILE *infofp, *fillefp;
-
-    sprintf(fname, rtrim(argv[1]));
-    if(argc == 3)
-        if(strstr(argv[2], "-l"))
-            lOption = true;
-    
-    if(isExist(infoDir, fname, pathname) < 0) {
-        fprintf(stderr, "There is no '%s' in the 'trash' directory\n", fname);
-        return ;
-    }
-
-    //같은 파일이 여러개인 경우
-    
-    //같은 파일 없는경우
-    sprintf(pathname, "%s/%s", infoDir, fname);
-    if ((infofp = fopen(pathname, "r")) == NULL) {
-        fprintf(stderr, "fopen error\n");
-        return ;
-    }
-    
-    fscanf(infofp, "%s" , buf);
-    strcpy(pathname, buf); //파일의 원래 있던 경로
-    if (intoCheck(fname, pathname)
-
-
 }
 
 
@@ -619,14 +568,62 @@ int isExist(char *dirName, char *fname, char *pathname) {
 		return;
 	}
 
-	void doRecover() {
+int intoCheck(char *fname, char *pathname) {
+    //pathname : 새이름, fname : 파일 이름만
+    char buf[BUFLEN];
+    sprintf(buf, "%s/%s", filesDir, fname); //원래 있던 파일
+    if (rename(buf, pathname) <0) {
+        fprintf(stderr, "remove error\n");
+        return false;
+    }
+    return true;
+}
 
-		return;
-	}
+void doRecover(int argc, char (*argv)[BUFLEN]) {
+    char tmp[BUFLEN];
+    char fname[BUFLEN];
+    char pathname[BUFLEN];
+    char buf[BUFLEN];
+    int i, lOption = false;    
+    FILE *infofp, *fillefp;
 
-	void doTree() {
-		return;
-	}
+   
+    sprintf(fname, rtrim(argv[1]));
+    if(argc == 3)
+        if(strstr(argv[2], "-l"))
+            lOption = true;
+    
+    if(isExist(infoDir, fname, pathname) < 0) {
+        fprintf(stderr, "There is no '%s' in the 'trash' directory\n", fname);
+        return ;
+    }
+
+    //같은 파일이 여러개인 경우 : 중복파일 정보 출력 후 선택한 파일을 복구
+
+    
+    //같은 파일 없는경우 => OK
+    sprintf(pathname, "%s/%s", infoDir, fname);
+    if ((infofp = fopen(pathname, "r")) == NULL) {
+        fprintf(stderr, "fopen error\n");
+        return ;
+    }
+    
+    fscanf(infofp, "%s" , buf);
+    strcpy(pathname, buf); //파일의 원래 있던 경로로 옮기기
+    if (intoCheck(fname, pathname) < 0) {
+        return;
+    }
+    //info파일 삭제하기
+    sprintf(tmp, "%s/%s", infoDir, fname);
+    if (remove(tmp) < 0 )
+        return ;
+
+    return;
+}
+
+void doTree() {
+    return ;
+}
 
 	void doHelp() {
 		printf("Usage : COMMAND [OPTION]\n");
