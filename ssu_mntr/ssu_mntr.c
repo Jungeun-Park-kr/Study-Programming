@@ -19,6 +19,8 @@
 #define BUFLEN 1024
 #define EVENT_SIZE (sizeof(struct inotify_event))
 #define EVENTLEN (1024 * (EVENT_SIZE+16))
+#define COMMAND_ARGC 7
+#define MAXFILE 100
 char checkDir[BUFLEN];
 char stdidDir[BUFLEN];
 char trashDir[BUFLEN];
@@ -176,6 +178,7 @@ void do_Monitor(char *logFile) {
 				}
 			}
 			i += EVENT_SIZE + event->len;
+            sleep(1);
 		}
 	}
 	inotify_rm_watch(ifd, wd);
@@ -187,7 +190,7 @@ void do_Monitor(char *logFile) {
 void do_Prompt() {
 	char command[BUFLEN];
 	char tmp[BUFLEN];
-	char argv[7][BUFLEN];
+	char argv[COMMAND_ARGC][BUFLEN];
 	int argc, i, cnt=0;
     char c;
     char *ptr;
@@ -195,7 +198,7 @@ void do_Prompt() {
         argc = cnt = 0;
         memset(tmp, (char)0, BUFLEN);
         memset(command, (char)0, BUFLEN);
-		for (i = 0; i < 7; i++) {
+		for (i = 0; i < COMMAND_ARGC; i++) {
 			memset(argv[i], (char)0, BUFLEN);
 		}
 		printf("20180753>");
@@ -568,6 +571,78 @@ int isExist(char *dirName, char *fname, char *pathname) {
 		return;
 	}
 
+int isDup(char *dirName, char *fname, int num, char (*dupfiles)[BUFLEN]) {
+    char tmp[BUFLEN];
+    char fpath[BUFLEN];
+    char nxtDir[BUFLEN];
+    DIR *dirp;
+    struct dirent *dp;
+    struct stat statbuf;
+    int i;
+
+    sprintf(fpath, "%s/%s", filesDir, fname);
+    if ((dirp = opendir(filesDir)) == NULL) {
+        fprintf(stderr, "opendir error for %s\n", fname);
+        return false;
+    }
+
+    while ((dp = readdir(dirp)) != NULL) {
+        if (!strcmp(dp->d_name, ".") || !strcmp(dp->d_name, ".."))
+            continue;
+        strcpy(tmp, dirName);
+        strcat(tmp, "/");
+        strcat(tmp, dp->d_name);
+
+        if (stat(tmp, &statbuf) < 0){
+            fprintf(stderr, "stat error\n");
+            return false;
+        }
+        if ((statbuf.st_mode & S_IFMT) == S_IFREG) {
+            if(!strcmp(fname, dp->d_name)) {
+                strcpy(dupfiles[num++], dp->d_name); //이름 복사해 저장
+            }
+        }
+        else if ((statbuf.st_mode & S_IFMT) == S_IFDIR) {
+            sprintf(nxtDir, "%s/%s", dirName, dp->d_name);
+            isDup(nxtDir, fname, num, dupfiles);
+        }
+    return true;
+}
+
+int printDup(int num, char (*dupFiles)[BUFLEN]) {
+    FILE *fp;
+    int i, choice = 0;
+    char path[BUFLEN], buf[BUFLEN], buf1[BUFLEN], buf2[BUFLEN];
+
+    //파일 풀네임 만들기(경로합쳐서) -> 오픈해서 D, M 정보 출력하기
+    
+    for(i = 0; i < num; i++) {
+       sprintf(path, "%s/%s", infoDir, dupFiles[i]); 
+        
+        if((fp = fopen(path, "r")) == NULL) {
+            fprintf("fopen error for %s\n", dupFiles[i]);
+            return ;
+        }
+        /////경로 제외하고 읽기
+        fscanf(fp, "%s", buf); //첫번째 줄 skip
+        
+        fscanf(fp, "%s", buf);
+        strcpy(buf1, rtrim(buf));
+        fscanf(fp, "%s", buf);
+        strcpy(buf2, rtrim(buf));
+
+        printf("%d. %s  %s %s", i, dupFiles[i], buf1, buf2);
+        fclose(fp);
+    }
+    printf("Choose : ");
+    scanf("%d", &choice);
+    
+    if(choice < 1)
+        return false;
+
+    return choice;
+}
+
 int intoCheck(char *fname, char *pathname) {
     //pathname : 새이름, fname : 파일 이름만
     char buf[BUFLEN];
@@ -584,9 +659,10 @@ void doRecover(int argc, char (*argv)[BUFLEN]) {
     char fname[BUFLEN];
     char pathname[BUFLEN];
     char buf[BUFLEN];
-    int i, lOption = false;    
+    int i, lOption = false, choice;    
     FILE *infofp, *fillefp;
-
+    int dupn = 0;
+    char dupfiles[MAXFILE][BUFLEN];
    
     sprintf(fname, rtrim(argv[1]));
     if(argc == 3)
@@ -598,26 +674,35 @@ void doRecover(int argc, char (*argv)[BUFLEN]) {
         return ;
     }
 
-    //같은 파일이 여러개인 경우 : 중복파일 정보 출력 후 선택한 파일을 복구
-
-    
-    //같은 파일 없는경우 => OK
-    sprintf(pathname, "%s/%s", infoDir, fname);
-    if ((infofp = fopen(pathname, "r")) == NULL) {
-        fprintf(stderr, "fopen error\n");
+    if (isDup(filesDir, fname, dupn, dupfiles) < 0) {
+        fprintf(stderr, "duplication confirm error \n");
         return ;
     }
-    
-    fscanf(infofp, "%s" , buf);
-    strcpy(pathname, buf); //파일의 원래 있던 경로로 옮기기
-    if (intoCheck(fname, pathname) < 0) {
-        return;
+    if(dupn > 1) { //파일 여러개인 경우 : 중복파일 정보 출력 후 선택된 파일을 복구
+        choice = printDup(dupn, dupfiles);
+        if (choice == false) {
+            fprintf(stderr, "printDup error\n");
+            return;
+        }
+        //선택한 파일
+        
     }
-    //info파일 삭제하기
-    sprintf(tmp, "%s/%s", infoDir, fname);
-    if (remove(tmp) < 0 )
-        return ;
-
+    else {
+        //같은 파일 없는경우 => OK
+        if ((infofp = fopen(pathname, "r")) == NULL) {
+            fprintf(stderr, "fopen error\n");
+            return ;
+        }
+        fscanf(infofp, "%s" , buf);
+        strcpy(pathname, buf); //파일의 원래 있던 경로로 옮기기
+        if (intoCheck(fname, pathname) < 0) {
+            return;
+        }
+        //info파일 삭제하기
+        sprintf(tmp, "%s/%s", infoDir, fname);
+        if (remove(tmp) < 0 )
+            return ;
+    }
     return;
 }
 
