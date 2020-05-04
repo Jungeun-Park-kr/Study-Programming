@@ -11,9 +11,8 @@ void ftl_open();
 void ftl_read(int lsn, char *sectorbuf);
 void ftl_write(int lsn, char *sectorbuf);
 SpareData set_spare(int lsn, int is_invalid, char *dummy);
-void spare_to_str(char *dest, SpareData spare);
 void erase_garbage_block();
-int search_empty_psn();
+int search_smallest_psn();
 void ftl_print();
 
 int main(void) {
