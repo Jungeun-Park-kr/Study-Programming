@@ -128,6 +128,8 @@ void do_Monitor(char *logFile) {
 		exit(1);
 	}
 
+
+    /*
 	ifd = inotify_init();
 	if (ifd == -1) {
 		fprintf(stderr, "inotify_init error\n");
@@ -151,9 +153,9 @@ void do_Monitor(char *logFile) {
                     
                     intertime = time(NULL);
                     tm = *localtime(&intertime);    
-                    /*stat(tmp, &statbuf);
+                    stat(tmp, &statbuf);
 					intertime = statbuf.st_atime;
-					tm = *gmtime(&intertime);*/
+					tm = *gmtime(&intertime);
 					logfp = fopen(logFile, "a");
 					fprintf(logfp, "[%d-%02d-%02d %02d:%02d:%02d]", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 					
@@ -162,9 +164,9 @@ void do_Monitor(char *logFile) {
 				}
 				else if (event->mask & IN_DELETE || event->mask & IN_MOVED_FROM) {
 					sprintf(tmp, "%s/%s", checkDir, event->name);
-					/*stat(tmp, &statbuf);
+					stat(tmp, &statbuf);
 					intertime = statbuf.st_atime;
-					tm = *gmtime(&intertime);*/
+					tm = *gmtime(&intertime);
 					
                     intertime = time(NULL);
                     tm = *localtime(&intertime);
@@ -176,9 +178,9 @@ void do_Monitor(char *logFile) {
 				}
 				else if (event->mask & IN_MODIFY | IN_CREATE) {
 					sprintf(tmp, "%s/%s", checkDir, event->name);
-					/*stat(tmp, &statbuf);
+					stat(tmp, &statbuf);
 					intertime = statbuf.st_atime;
-					tm = *gmtime(&intertime);*/
+					tm = *gmtime(&intertime);
 
                     intertime = time(NULL);
                     tm = *localtime(&intertime);
@@ -196,6 +198,8 @@ void do_Monitor(char *logFile) {
 	inotify_rm_watch(ifd, wd);
 	close(ifd);
 	fclose(logfp);
+
+    */
 	return;
 }
 
@@ -247,7 +251,8 @@ void do_Prompt() {
 			doRecover(argc, argv);
 		}
 		else if (strstr(command, "tree") != NULL) {
-			doTree();
+			chdir(checkDir);
+            doTree(0);
 		}
 		else {
 			doHelp();
@@ -278,6 +283,17 @@ char *ltrim(char *str) {
 	return str;
 }
 
+char *rmvpath(char *str) { //앞의 경로는 제외하고 이름만 뽑아내는 함수
+    char *start;
+    
+    start = str + strlen(str) - 1;
+    while (*start != '/')
+        --start;
+    str = start + 1;
+    
+    return str;
+}
+    
 
 long getDirSize(char *dirName) {
 	struct dirent *dirp;
@@ -315,8 +331,10 @@ long getDirSize(char *dirName) {
 	return dsize;
 }
 
-int compTime(struct tm t1, struct tm t2) { //더 오래된게 리턴
-	if (t1.tm_year + 1900 < t2.tm_year + 1900)
+int compTime(struct tm t1, struct tm t2) { //t1이 오래되면 1, t2가 오래되면 0 리턴
+	printf("시간비교 실행\n");
+  
+    if (t1.tm_year < t2.tm_year)
 		return true;
 	else if (t1.tm_year + 1900 > t2.tm_year + 1900)
 		return false;
@@ -330,6 +348,21 @@ int compTime(struct tm t1, struct tm t2) { //더 오래된게 리턴
 		return true;
 	else if (t1.tm_mday > t2.tm_mday)
 		return false;
+
+    if (t1.tm_hour < t2.tm_hour)
+        return true;
+    else if (t1.tm_hour > t2.tm_hour)
+        return false;
+
+    if (t1.tm_min < t2.tm_min)
+        return true;
+    else if (t1.tm_min > t2.tm_min)
+        return false;
+
+    if (t1.tm_sec < t2.tm_min)
+        return true;
+    else if (t1.tm_sec > t2.tm_sec)
+        return false;
 }
 
 void findOldFile(char *dirName, char *oldest, struct tm oldtm) {
@@ -345,7 +378,7 @@ void findOldFile(char *dirName, char *oldest, struct tm oldtm) {
 	if ((dp = opendir(dirName)) == NULL) {
 		fprintf(stderr, "opendir error\n");
 		return;
-	}
+    }
 	while ((dirp = readdir(dp)) != NULL) {
 		if (!strcmp(dirp->d_name, ".") || !strcmp(dirp->d_name, ".."))
 			continue;
@@ -360,10 +393,12 @@ void findOldFile(char *dirName, char *oldest, struct tm oldtm) {
 		}
 
 		if ((statbuf.st_mode & S_IFMT) == S_IFREG) {
-			newtime = statbuf.st_mtime;
+			printf("검색할 파일 : %s\n",fname);
+            newtime = statbuf.st_mtime;
 			newtm = *gmtime(&newtime);
-			if (!compTime(oldtm, newtm)) { //newtm이 더 오래되면 갱신
-				strcpy(oldest, fname);
+			if (!compTime(oldtm, newtm)) { //newtm이 더 오래되면 0리턴
+				printf("갱신됨 : %s\n", fname);
+                strcpy(oldest, fname);
 				oldtm = newtm;
 			}
 		}
@@ -375,12 +410,28 @@ void findOldFile(char *dirName, char *oldest, struct tm oldtm) {
 	return;
 }
 
+char *rmvdelimeter(char *str) {
+    char tmp[BUFLEN];
+    char *start, *end;
+
+    strcpy(tmp, str);
+    start = tmp;
+    while (*start != '\0' && *start != '*')
+        ++start;
+    end = start;
+    start = tmp;
+    *(end) = '\0';
+    //printf("start : %s\n", start);
+    
+    return start;
+}
+
 int isExist(char *dirName, char *fname, char *pathname) {
 	//dirName 디렉토리에 fname파일 존재시 true(1)리턴, 없으면 false(0)리턴, 파일경로 pathname에 저장
 	struct dirent *dirp;
 	struct stat statbuf;
 	DIR *dp;
-	char tmpname[BUFLEN];
+	char tmpname[BUFLEN], dname[BUFLEN];
 	char nxtdir[BUFLEN];
 	int result = false;
 	if ((dp = opendir(dirName)) == NULL) {
@@ -398,8 +449,9 @@ int isExist(char *dirName, char *fname, char *pathname) {
 		}
 
 		if ((statbuf.st_mode & S_IFMT) == S_IFREG) {
-			if (!strcmp(fname, dirp->d_name)) {
-				strcpy(pathname, tmpname);//경로까지 합친 이름 저장
+            strcpy(dname, rmvdelimeter(dirp->d_name));
+			if (!strcmp(fname, dname)) {  //delimeter 제거하고 이름 비교하기
+				strcpy(pathname, tmpname); //경로까지 합친 이름 저장
 				return true;
 			}
 		}
@@ -467,21 +519,6 @@ int intoTrash(char *fname, char *pathname) { //rename()으로 경로 바꾸기!
 
 }
 
-char *rmvdelimeter(char *str) {
-    char tmp[BUFLEN];
-    char *start, *end;
-
-    strcpy(tmp, str);
-    start = tmp;
-    while (*start != '\0' && *start != '*')
-        ++start;
-    end = start;
-    start = tmp;
-    *(end) = '\0';
-    //printf("start : %s\n", start);
-    
-    return start;
-}
 
 void doDelete(int argc, char(*argv)[BUFLEN]) {
 	char oldest[BUFLEN];
@@ -491,7 +528,7 @@ void doDelete(int argc, char(*argv)[BUFLEN]) {
 	time_t nowt;
 	struct tm tm;
 
-	char fname[BUFLEN];
+	char fname[BUFLEN], tmpbuf[BUFLEN];
 	char deldate[BUFLEN], deltime[BUFLEN], curdate[BUFLEN], curtime[BUFLEN];
 	char fullpath[BUFLEN], filespath[BUFLEN];
     char newname[BUFLEN];
@@ -503,27 +540,49 @@ void doDelete(int argc, char(*argv)[BUFLEN]) {
     char dupfiles[MAXFILE][BUFLEN];
     char delimeter[BUFLEN];
 
+
     while(1) { //infoDir크기 확인
         dsize = getDirSize(infoDir);
+        printf("디렉토리의 크기 : %ld\n", dsize);
 	    if (dsize > 2000) { //2KB넘을 경우 제일 오래된 파일 삭제
-		    //findOldFile(infoDir, oldest, tm); //제일 오래된 파일이름 oldest에 저장됨
-		    //remove(oldest);
+		    nowt = time(NULL);
+            tm = *localtime(&nowt);
+            findOldFile(infoDir, oldest, tm); //제일 오래된 파일이름 oldest에 저장됨
+            printf("제일 오래된 파일 : %s\n", oldest);
+		    remove(oldest);
             //같은 이름 가진 info file도 삭제해야함
 	    }
         else
             break;
     }
-	strcpy(fname, rtrim(argv[1]));
 
-	if (strlen(fname) < 0) {
+    strcpy(fname, rtrim(argv[1]));
+    if (strlen(fname) < 0) {
 		fprintf(stderr, "file name error!\n", argv[1]);
 		return;
 	}
 	
-    if (!isExist(checkDir, fname, fullpath)) {
-		fprintf(stderr, "%s file don't exist!\n", fname);
-		return;
+    if (!isExist(checkDir, fname, fullpath)) { //상대경로(파일이름)로 파일 존재 확인
+        strcpy(tmpbuf, rmvpath(fname));
+        if (!isExist(checkDir, tmpbuf, fullpath)) { //절대경로로 파일 존재 확인
+		    fprintf(stderr, "%s file don't exist!\n", fname); //그래도 없으면 메시지 출력 후 종료
+		    return;
+        }
+        else { //절대경로이면 파일 이름만 fname에 저장
+            strcpy(fname, tmpbuf);
+        }
 	}
+    
+
+    printf("first fname(무조건 이름만 나와야됨) : %s\n", fname);
+    
+    //sprintf(tmpname, "%s/%", checkDir, rtrim(argv[1]));
+    /*if (realpath(argv[1], fname) == NULL) {
+        fprintf(stderr, "realpath error\n");
+        exit(1);
+    }*/
+    
+
 
     //중복파일있는지 확인
     res = isExist(filesDir, fname, filespath); //하나라도 있으면 true(1) 리턴
@@ -537,13 +596,12 @@ void doDelete(int argc, char(*argv)[BUFLEN]) {
         if (nums > 0) { //중복된 파일이 있는경우
             //파일 이름 뒤에 delimeter숫자 추가해 이름변경 (a.txt*2, a.txt*3, ...)
             strcpy(newname, fname);
-            sprintf(delimeter, "%c%d\0", '*', nums+1);
+            sprintf(delimeter, "%c%d", '*', nums+1);
             strcat(newname, delimeter);
             strcpy(fname, newname);
         }
     }
 
-	chdir(workDir);
 	if (argc == 2) { //ENDTIME 없는경우 즉시삭제
 		nowt = time(NULL);
 		tm = *localtime(&nowt); //삭제시간 저장    
@@ -626,7 +684,8 @@ int isDup(char *dirName, char *fname, int *num, char(*dupfiles)[BUFLEN]) {
 	struct dirent *dp;
 	struct stat statbuf;
 	int i;
- 
+   
+   printf("들어옴 "); 
 	//sprintf(fpath, "%s/%s", dirName, fname);
 	if ((dirp = opendir(dirName)) == NULL) {
 		fprintf(stderr, "opendir error for %s\n", dirName);
@@ -655,6 +714,7 @@ int isDup(char *dirName, char *fname, int *num, char(*dupfiles)[BUFLEN]) {
 			isDup(nxtDir, fname, num, dupfiles);
 		}
 	}
+    printf("나감\n");
 	return true;
 }
 
@@ -698,14 +758,39 @@ int printDup(int num, char *fname, char(*dupFiles)[BUFLEN]) {
 }
 
 int intoCheck(char *fname, char *pathname) {
-	//pathname : 저장될경로, fname : 기존이름(경로제외 이름만)
-	char buf[BUFLEN];
-	    sprintf(buf, "%s/%s", filesDir, rtrim(fname)); //원래 있던 파일
-	    if (rename(buf, pathname) < 0) {
-		    fprintf(stderr, "rename error\n");
-		    return false;
-	    }
-	    return true;
+    //pathname : 저장될경로, fname : 기존이름(경로 포함됨)
+	char dupfiles[MAXFILE][BUFLEN], tmpbuf[BUFLEN];
+	char curname[BUFLEN], curpath[BUFLEN], newname[BUFLEN], newpath[BUFLEN];
+    int isdup = false, dupnum = 0;
+
+    printf("파라미터 fname :%s\n",fname);
+    strcpy(curname, rmvpath(fname)); //경로 제외해서 이름만
+    sprintf(curpath, "%s/%s", filesDir, curname); //이동시킬 파일 경로
+
+    strcpy(newname, rmvdelimeter(curname)); //저장될 이름 저장
+    isdup = isExist(checkDir, newname, tmpbuf); //딜리미터 제거한 이름(원래이름)이 중복인지 확인
+    if (isdup) { //중복 파일 존재시 숫자_추가 후 rename()
+        printf("checkDir에 중복 파일 존재!\n");
+       
+        printf("newname:%s\n",newname); 
+        isDup(checkDir, newname, &dupnum, dupfiles); //check파일에 존재하는 파일의 개수 가져오기
+        printf("dupnum:%d\n",dupnum);
+        sprintf(newpath, "%s/_%d%s", checkDir, dupnum+1, newname);
+        
+        printf("현재이름 :%s변경이름 :%s\n", curpath, newpath);
+        if (rename(curpath, newpath) < 0) {
+            fprintf(stderr, "rename error\n");
+            return false;
+        }
+        return true;
+    }
+
+    //rename()으로 원래의 경로로 파일 이동(복구)
+    if (rename(curpath, pathname) < 0) { //buf에서 pathname으로 변경
+		fprintf(stderr, "rename error\n");
+		return false;
+	}
+	return true;
 }
 
 void relocateDup(char *dirName, char *fname) {
@@ -728,7 +813,7 @@ void relocateDup(char *dirName, char *fname) {
            sprintf(tmp, "%s/%s", dirName, dirp->d_name);
 
            strcpy(path, tmp);
-           sprintf(newpath, "%s/%s*%d\0", dirName, dirp->d_name, idx++);
+           sprintf(newpath, "%s/%s*%d", dirName, dirp->d_name, idx++);
 
            if (rename(path, newpath) < 0) {
                fprintf(stderr, "rename error\n");
@@ -744,7 +829,7 @@ void doRecover(int argc, char(*argv)[BUFLEN]) {
 	char fname[BUFLEN];
 	char pathname[BUFLEN];
 	char buf[BUFLEN];
-	int i, lOption = false, choice;
+	int i, lOption = false, choice, res;
 	FILE *infofp, *fillefp;
 	int dupn = 0;
 	char dupfiles[MAXFILE][BUFLEN];
@@ -765,7 +850,7 @@ void doRecover(int argc, char(*argv)[BUFLEN]) {
 		return;
 	}
 	if (dupn > 1) { //파일 여러개인 경우 : 중복파일 정보 출력 후 선택된 파일을 복구
-		choice = printDup(dupn, fname, dupfiles);
+        choice = printDup(dupn, fname, dupfiles);
 		if (choice == false) {
 			fprintf(stderr, "printDup error\n");
 			return;
@@ -780,20 +865,23 @@ void doRecover(int argc, char(*argv)[BUFLEN]) {
         //printf("mvfname, : %s\n", mvfname);
         fgets(buf, BUFLEN, infofp); //Trash Info skip
         fgets(buf, BUFLEN, infofp); //경로저장
-        strcpy(pathname, buf);
-        if (intoCheck(dupfiles[choice-1], pathname) < 0) {
+        strcpy(pathname, rtrim(buf));
+        if ((res= intoCheck(dupfiles[choice-1], pathname)) < 0) {
             return;
         }
-        sprintf(tmp, "%s/%s", infoDir, rtrim(dupfiles[choice-1]));
-        if (remove(tmp) < 0)
-            return;
+        else if (res) {
+            sprintf(tmp, "%s/%s", infoDir, rtrim(dupfiles[choice-1]));
+            if (remove(tmp) < 0)
+                return;
+        }
         
         //recover 한 후에, 다른 파일 이름 delimeter 다시 정리
-        relocateDup(infoDir, fname); //같은 이름 가진 파일들 정렬
-	    relocateDup(filesDir, fname);
+        //relocateDup(infoDir, fname); //같은 이름 가진 파일들 정렬
+	    //relocateDup(filesDir, fname);
     }
 	else {
 		//같은 파일 없는경우 => OK
+        //같은 파일 없어도 복수파일로 인해 딜리미터가 붙은 이름인경우
 		if ((infofp = fopen(pathname, "r")) == NULL) {
 			fprintf(stderr, "fopen error\n");
 			return;
@@ -801,18 +889,88 @@ void doRecover(int argc, char(*argv)[BUFLEN]) {
         fgets(buf, BUFLEN, infofp); //첫번째 줄은 필요 x
 		fgets(buf, BUFLEN, infofp); //기존의 파일 경로 저장
 		strcpy(pathname, buf); //파일의 원래 있던 경로로 옮기기
-		if (intoCheck(fname, pathname) < 0) {
+        isExist(filesDir, fname, buf);
+        if (strcmp(fname, buf))
+            strcpy(fname, buf);
+        if ((res = intoCheck(fname, pathname)) < 0) { //fname을 pathname으로 이
 			return;
 		}
-		//info파일 삭제하기
-		sprintf(tmp, "%s/%s", infoDir, fname);
-		if (remove(tmp) < 0)
-			return;
-	}
+        else if(res) { //원래 파일위치로 이동한 후에는 info 파일도 삭제가능
+		    //info파일 삭제하기 
+            isExist(infoDir, fname, buf);
+            if (strcmp(fname, buf))
+                strcpy(fname, buf);       
+		    sprintf(tmp, "%s/%s", infoDir, fname);
+		    if (remove(tmp) < 0)
+                return;
+        }
+    }
 	return;
 }
 
-void doTree() {
+int except_tmp_file(const struct dirent *info) {
+
+}
+
+void doTree(int depth) {
+    int fcnt;
+    int i, j;
+    struct dirent **filelist;
+    char fpath[BUFLEN], tmp[BUFLEN];
+    struct stat statbuf;
+
+
+    if ((fcnt = scandir(checkDir, &filelist, NULL, alphasort)) == -1) {
+        fprintf(stderr, "scandir error for checkDir\n");
+        exit(1);
+    }
+    printf("경로:");
+    system("pwd");
+    
+    for(i = 0; i < fcnt; i++) {
+        //printf("%s\n", filelist[i]->d_name);
+        strcpy(tmp, filelist[i]->d_name);
+        if (!strcmp(tmp, ".")) {
+            printf("check----------");
+            continue;
+        }
+        
+        /*else {
+            if (!strcmp(tmp, ".")) {
+                printf("-%s----------", tmp);
+        
+        }*/
+        if (!strcmp(tmp, ".."))
+            continue;
+
+        if (stat(tmp, &statbuf) < 0 ) {
+            fprintf(stderr, "stat error\n");
+            return;
+        }
+
+        if ((statbuf.st_mode & S_IFMT) == S_IFREG) {
+            for(j = 0; j <= depth; j++)  //파일 이름 출력 전 공백
+                printf("\t\t\t");
+           printf("-%s\n", tmp);
+           if (depth < 5) {
+               for(j = 4; j > depth; j--)
+                   printf("\t\t\t|\n");
+            }
+           else
+               printf("\t\t\t|\n");
+        
+        }
+        else if ((statbuf.st_mode & S_IFMT) == S_IFDIR) {
+            printf("-%s----------", tmp);
+        }
+    }
+
+    for(i = 0; i < fcnt; i++) {
+        free(filelist[i]);
+    }
+
+    free(filelist);
+
 	return;
 }
 
@@ -830,6 +988,4 @@ void doHelp() {
 	printf("                    OPTION : \n");
 	printf("                            -l              trash 디렉토리 밑에 있는 파일과 삭제 시간들을 삭제시간이 오래된 순으로 출력 후, 명령어 진행\n\n");
 	printf(" tree                                       check 디렉토리의 구조를 tree 형태로 보여줌\n\n");
-	printf(" exit                                       프로그램 종료\n\n");
-	printf(" help                                       명령어 사용법 출력\n\n");
 }
