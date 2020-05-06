@@ -17,10 +17,9 @@
 #define false 0
 
 #define BUFLEN 1024
-#define EVENT_SIZE (sizeof(struct inotify_event))
-#define EVENTLEN (1024 * (EVENT_SIZE+16))
 #define COMMAND_ARGC 7
 #define MAXFILE 100
+
 char checkDir[BUFLEN];
 char stdidDir[BUFLEN];
 char trashDir[BUFLEN];
@@ -113,6 +112,139 @@ pid_t monitor_deamon_init() {
 	return pid;
 }
 
+int except_tmp_file(const struct dirent *info) {
+    char *name;
+
+    strcpy(name, info->d_name);
+
+    if(info->d_name[0] != '.') //'.'으로 시작하는 swp파일 등은 포함시키지 않음
+        return 1;
+    else
+        return 0;
+}
+
+int save_dir_info(char *path, struct dirent **flist, struct tm *tm, int idx) {
+   //path(디렉토리)에 있는 파일 이름 flist에 저장, st_mtime을 tm에 저장 총 파일 개수 리턴
+    int cnt = 0;
+    int i, j;
+    struct stat statbuf;
+    char *nxtpath[BUFLEN];
+
+    if ((cnt = scandir(path, &flist+idx, except_tmp_file, alphasort)) == -1) {
+        fprintf(stderr, "scandir error for %s\n", path);
+        return false;
+    }
+
+    for (i = idx, j = 0; j < cnt; j++) {
+        if (stat(flist[i]->d_name, &statbuf) < 0) {
+            fprintf(stderr, "stat error\n");
+            return false;
+        }
+        if ((statbuf.st_mode & S_IFMT) == S_IFREG) {
+            tm[i] = *localtime(&statbuf.st_mtime);
+        }
+        else if ((statbuf.st_mode * S_IFMT) == S_IFDIR) {
+            tm[i] = *localtime(&statbuf.st_mtime);
+            //sprintf(fname[idx+cnt+1], "*%s", flist[i]->d_name);
+            //tm[idx+cnt+1] = NULL;
+            sprintf(nxtpath, "%s/%s", path, flist[i]->d_name);
+            cnt += (nxtpath, flist, tm, idx+cnt+1);
+    }
+    return cnt;
+}
+
+void do_Monitor (char *logFile) { 
+    FILE *logfp;
+    struct dirent **flist1, **flist2;
+    int cnt1, cnt2, i, j;
+    time_t nowt;
+    struct tm tm;
+    struct stat statbuf;
+    struct tm *tm1, *tm2;
+    chdir(checkDir);
+    const char *path = ".";
+
+    if ((logfp = fopen(logFile, "a+")) == NULL) {
+        fprintf("fopen error for %s\n", logFile);
+        return ;
+    }
+    //cnt1 = save_dir_info(path, &flist1, tm1, 0); //flist1에 파일이름, tm1에 mtime저장
+    if ((cnt1 = (save_dir_info(path, &flist1, tm1, 0))) == 0) {
+        fprintf(stderr, "saved_dir_info error\n");
+        return;
+    }
+    /*if ((cnt1 = scandir(path, &flist1, except_tmp_file, alphasort)) == -1) {
+        fprintf(stderr, "check Directory scan error\n");
+        return ;
+    }*/
+
+
+    while(1) { 
+        //sleep(1);
+        if ((cnt2 = (save_dir_info(path, &flist2, tm2, 0))) == 0) {
+            fprintf(stderr, "saved_dir_info error\n");
+            return;
+        }  
+        /*if ((cnt2 = scandir(path, &flist2, except_tmp_file, alphasort)) = -1) {
+            fprintf(stderr, "check Directory scan error\n");
+            return ;
+        }*/
+        nowt = time(NULL);
+        tm = *localtime(&nowt);
+
+        if (cnt1 < cnt2) { //파일의 생성이 일어난 경우
+            for (i = 0; i < cnt1; i++) {
+                if (!strcmp(flist1[i]->d_name, flist2[i]->d_name)) 
+                    continue;
+                else {
+                    fprintf(logfp, "[%d-%02d-%02d %02d:%02d:%02d]", tm2[i].tm_year+1900, tm2[i].tm_mon+1, tm2[i].tm_mday, tm2[i].tm_hour, tm2[i].tm_min, tm2[i].tm_sec);
+                    fprintf(logfp, "[create_%s]\n", flist2[i]->d_name);
+                    break;
+                }
+            }
+            //끝에 파일이 생성된 경우
+            fprintf(logfp, "[%d-%02d-%02d %02d:%02d:%02d]", tm2[i].tm_year+1900, tm2[i].tm_mon+1, tm2[i].tm_mday, tm2[i].tm_hour, tm2[i].tm_min, tm2[i].tm_sec);
+            fprintf(logfp, "[create_%s]\n", flist2[i]->d_name);
+        //리스트1 = 리스트2 로 업데이트
+        //in here
+        
+        }
+
+        else if (cnt1 > cnt2) { //파일의 삭제가 일어난 경우
+            fprintf(logfp, "[%d-%02d-%02d %02d:%02d:%02d]", tm1[i].tm_year + 1900, tm1[i].tm_mon + 1, tm1[i].tm_mday, tm1[i].tm_hour, tm1[i].tm_min, tm1[i].tm_sec);
+            for (i = 0; i < cnt2; i++) {
+                if (!strcmp(flist1[i]->d_name, flist2[i]->d_name))
+                    continue;
+                else {
+                    fprintf(logfp, "[delete_%s]\n", flist1[i]->d_name);
+                    break;
+                }
+            }
+            //끝 파일이 변경됨
+            fprintf(logfp, "[delete_%s]\n", flist[i]->d_name);
+        //리스트1 = 리스트2로 업데이트
+        //in here
+        
+        }
+        else { //파일의 수정이 일어났거나 변화 없는 경우
+            for (i = 0; i < cnt; i++) {
+                if (compTime(tm1[i], tm2[i])) { // 변화 o (수정일어남)
+                    fprintf(logfp, "[%d-%02d-%02d %02d:%02d:%02d]", tm2[i].tm_year+1900, tm2[i].tm_mon+1, tm2[i].tm_mday, tm2[i].tm_hour, tm2[i].tm_min, tm2[i].tm_sec);
+                    fprintf(logfp, "[modify_%s]\n", flist2[i]->d_name);
+                    
+                    //리스트 1 = 리스트2로 업데이트
+                    //in here
+                    break;
+                }
+                else 
+                    continue;    
+            }
+        }
+
+    }
+}
+
+/*
 void do_Monitor(char *logFile) {
 	int ifd, wd;
 	FILE *logfp;
@@ -128,8 +260,6 @@ void do_Monitor(char *logFile) {
 		exit(1);
 	}
 
-
-    /*
 	ifd = inotify_init();
 	if (ifd == -1) {
 		fprintf(stderr, "inotify_init error\n");
@@ -199,9 +329,9 @@ void do_Monitor(char *logFile) {
 	close(ifd);
 	fclose(logfp);
 
-    */
+    
 	return;
-}
+}*/
 
 void do_Prompt() {
 	char command[BUFLEN];
@@ -337,31 +467,43 @@ int compTime(struct tm t1, struct tm t2) { //t1이 오래되면 1, t2가 오래�
 		return true;
 	else if (t1.tm_year + 1900 > t2.tm_year + 1900)
 		return false;
+    else
+        return -1;
 
 	if (t1.tm_mon + 1 < t2.tm_mon + 1)
 		return true;
 	else if (t1.tm_mon + 1 > t2.tm_mon + 1)
 		return false;
+    else
+        return -1;
 
 	if (t1.tm_mday < t2.tm_mday)
 		return true;
 	else if (t1.tm_mday > t2.tm_mday)
 		return false;
+    else
+        return -1;
 
     if (t1.tm_hour < t2.tm_hour)
         return true;
     else if (t1.tm_hour > t2.tm_hour)
         return false;
+    else
+        return -1;
 
     if (t1.tm_min < t2.tm_min)
         return true;
     else if (t1.tm_min > t2.tm_min)
         return false;
+    else
+        return -1;
 
     if (t1.tm_sec < t2.tm_min)
         return true;
     else if (t1.tm_sec > t2.tm_sec)
         return false;
+    else
+        return -1;
 }
 
 void findOldFile(char *dirName, char *oldest, struct tm oldtm) {
