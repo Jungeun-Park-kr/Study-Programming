@@ -365,7 +365,8 @@ int compTime(struct tm t1, struct tm t2) { //t1이 오래되면 1, t2가 오래�
 }
 
 void findOldFile(char *dirName, char *oldest, struct tm oldtm) {
-	printf("fildOldFile() 실행\n");
+//void findOldFile(char *dirName, char *oldest, char *oldtime) {
+    printf("fildOldFile() 실행\n");
 	struct dirent *dirp;
 	DIR *dp;
 	struct stat statbuf;
@@ -373,6 +374,7 @@ void findOldFile(char *dirName, char *oldest, struct tm oldtm) {
 	time_t newtime;
 	struct tm newtm;
 
+    //FILE *fp;
 
 	if ((dp = opendir(dirName)) == NULL) {
 		fprintf(stderr, "opendir error\n");
@@ -393,10 +395,15 @@ void findOldFile(char *dirName, char *oldest, struct tm oldtm) {
 
 		if ((statbuf.st_mode & S_IFMT) == S_IFREG) {
 			printf("검색할 파일 : %s\n",fname);
+            /*if ((fp = fopen(fname, "r")) == NULL) {
+                fprintf(stderr, "fopen error for %s\n", fname);
+                return;
+            }*/
+            
             newtime = statbuf.st_mtime;
 			newtm = *gmtime(&newtime);
 			if (!compTime(oldtm, newtm)) { //newtm이 더 오래되면 0리턴
-				printf("갱신됨 : %s\n", fname);
+				//printf("갱신됨 : %s\n", fname);
                 strcpy(oldest, fname);
 				oldtm = newtm;
 			}
@@ -520,7 +527,7 @@ int intoTrash(char *fname, char *pathname) { //rename()으로 경로 바꾸기!
 
 
 void doDelete(int argc, char(*argv)[BUFLEN]) {
-	char oldest[BUFLEN];
+	char oldest[BUFLEN], oldestfname[BUFLEN];
 	int idx = 0, i;
 	struct stat statbuf;
 	off_t dsize;
@@ -548,8 +555,10 @@ void doDelete(int argc, char(*argv)[BUFLEN]) {
             tm = *localtime(&nowt);
             findOldFile(infoDir, oldest, tm); //제일 오래된 파일이름 oldest에 저장됨
             printf("제일 오래된 파일 : %s\n", oldest);
-		    remove(oldest);
-            //같은 이름 가진 info file도 삭제해야함
+            strcpy(oldestfname, rmvpath(oldest)); //경로 제외한 이름만복사
+		    remove(oldest); //info 디렉토리 내의 파일 삭제
+            sprintf(oldest, "%s/%s", filesDir,oldestfname);
+            remove(oldest); //files 디렉토리 내의 파일 삭제
 	    }
         else
             break;
@@ -575,13 +584,6 @@ void doDelete(int argc, char(*argv)[BUFLEN]) {
 
     printf("first fname(무조건 이름만 나와야됨) : %s\n", fname);
     
-    //sprintf(tmpname, "%s/%", checkDir, rtrim(argv[1]));
-    /*if (realpath(argv[1], fname) == NULL) {
-        fprintf(stderr, "realpath error\n");
-        exit(1);
-    }*/
-    
-
 
     //중복파일있는지 확인
     res = isExist(filesDir, fname, filespath); //하나라도 있으면 true(1) 리턴
@@ -616,12 +618,24 @@ void doDelete(int argc, char(*argv)[BUFLEN]) {
 	strcpy(deldate, rtrim(argv[2]));
 	strcpy(deltime, rtrim(argv[3]));
 
+    //입력받은 삭제시간이 현재보다 이전인 경우 -> 에러처리
+    nowt = time(NULL);
+    tm = *localtime(&nowt);
+	sprintf(curdate, "%d-%02d-%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
+	sprintf(curtime, "%02d:%02d", tm.tm_hour, tm.tm_min);
+    if ((strcmp(curdate, deldate)==1||strcmp(curtime, deltime)==1)) { 
+        fprintf(stderr, "delete time not be past!\n");
+        return;
+    }
+    
+
 	for (i = 0; i < argc; i++) { //옵션저장
 		if ((ptr = strstr(argv[i], "-r")) != NULL)
 			rOption = true;
 		if ((ptr = strstr(argv[i], "-i")) != NULL)
 			iOption = true;
 	}
+
 
 	//삭제시간 기다리기
 	while (1) {
@@ -763,6 +777,7 @@ int intoCheck(char *fname, char *pathname) {
     int isdup = false, dupnum = 0;
 
     printf("파라미터 fname :%s\n",fname);
+    strcpy(pathname, rtrim(pathname));
     strcpy(curname, rmvpath(fname)); //경로 제외해서 이름만
     sprintf(curpath, "%s/%s", filesDir, curname); //이동시킬 파일 경로
 
@@ -912,7 +927,7 @@ int except_tmp_file(const struct dirent *info) {
 
 
 
-int makeTree(int depth, char *dname, char (*fname)[BUFLEN], char *ftype, char *fdep, int idx) 
+int makeTree(int depth, char *dname, char (*fname)[BUFLEN], char *ftype, int *fdep, int idx) 
 { //배열 만드는 함수
     int fcnt, allcnt;
     int i, j, fidx = 0;
@@ -934,15 +949,20 @@ int makeTree(int depth, char *dname, char (*fname)[BUFLEN], char *ftype, char *f
         chdir(dname);
         //printf("%s\n", filelist[i]->d_name);
         strcpy(tmp, filelist[fidx]->d_name);
-        if (depth==1)
+        printf("현재 depth : %d\n", depth);
+        if (depth == 1)
             printf("파일 : %s\n", tmp);
         if (!strcmp(tmp, ".")) {
             strcpy(fname[i], tmp);
-            if(depth == 0) 
+            if(depth == 0) {
                 ftype[i] = 'c'; //check 자기자신
-            else
+                fdep[i] = depth;
+                depth++;
+            }
+            else {
                 ftype[i] = 'r'; //무시
-            fdep[i] = depth;
+                fdep[i] = depth;
+            }
             continue;
         }
         
@@ -952,8 +972,6 @@ int makeTree(int depth, char *dname, char (*fname)[BUFLEN], char *ftype, char *f
             ftype[i] = 'p'; //무시
             continue;
         }
-        if (depth ==1)
-            printf("파일한번더:%s\n", tmp);
         if (stat(tmp, &statbuf) < 0 ) {
             fprintf(stderr, "stat error for %s\n", tmp);
             return;
@@ -978,18 +996,88 @@ int makeTree(int depth, char *dname, char (*fname)[BUFLEN], char *ftype, char *f
 }
 
 
-void printTree(int depth, char *dname, char (*fname)[BUFLEN], char *ftype) {
+void printTree(int fsize, char (*fname)[BUFLEN], char *ftype, int *fdep, int idx) {
     int i, j, k;
     int fcnt = 0;
+    char tab[10] = "\t\t";
+    char line[13] = "------------";
+    int depth;
 
-    for(i = 0; i < BUFLEN; i++) {
+    for (i = idx; i < fsize; i++) {
+        depth = fdep[i];
+        if (depth ==2)
+            printf("depth2\n");
+        if (ftype[i] == 'c') {
+            printf("check%s", line);
+            continue;
+        }
+        
+        else if(ftype[i] == 'f') {
+            if (ftype[i-1] == 'p') { //첫 번째 출력되는 일반 파일
+                printf("%s", fname[i]);
+            }
+            else { //두번째 이후 출력되는 일반 파일
+                if (ftype[i-1] == 'f' && ftype[i-2] == 'p')
+                    printf("\n");
+                if (fdep[i] < 5) {
+                    for (j = 0; j < depth; j++)    
+                        printf("%s|", tab);
+                    printf("\n");
+                    for (j = 0; j < depth; j++)    
+                        printf("%s|", tab);
+                    printf("\n");
+                    for (j = 0; j < depth; j++)    
+                        printf("%s|", tab);  
+                    printf("\n");
+                    for (j = 0; j < depth; j++)
+                        printf("%s|", tab);      
+                }
+                else {
+                    for (j = 0; j < depth; j++) 
+                        printf("%s|", tab);
+                    printf("\n");
+                    for (j = 0; j < depth; j++) 
+                        printf("%s|", tab);
+                }
+                printf("-%s\n", fname[i]);
+            }
+        }
+        else if (ftype[i] == 'd') {
+                if (fdep[i] < 5) {
+                    for (j = 0; j < depth; j++)    
+                        printf("%s|", tab);
+                    printf("\n");
+                    for (j = 0; j < depth; j++)    
+                        printf("%s|", tab);
+                    printf("\n");
+                    for (j = 0; j < depth; j++)    
+                        printf("%s|", tab);  
+                    printf("\n");
+                    for (j = 0; j < depth; j++)
+                        printf("%s|", tab);      
+                }
+                else {
+                    for (j = 0; j < depth; j++) 
+                        printf("%s|", tab);
+                    printf("\n");
+                    for (j = 0; j < depth; j++) 
+                        printf("%s|", tab);
+                }
+            printf("+%s%s", fname[i], line);
+            printTree(fsize, fname, ftype, fdep, i+1);
+        }
+        if (fdep[i] > fdep[i+1]) //재귀호출시 종료조건
+            return;
+}
+
+    /*for(i = 0; i < BUFLEN; i++) {
         if(!strcmp(fname[i], ".")) {
             if(ftype[i]=='c')
-                printf("check----------");
+                printf("check%s",line);
             else {
                 for(j = 0; j <= depth; j++)
                     printf("\t\t\t");
-                printf("+%s----------", fname[i]);
+                printf("+%s%s", fname[i],line);
             }
             continue;
         }
@@ -1020,7 +1108,7 @@ void printTree(int depth, char *dname, char (*fname)[BUFLEN], char *ftype) {
 
             }
         }
-    } 
+    } */
 
 }
 
@@ -1031,7 +1119,7 @@ void doTree() {
     char ftype[BUFLEN];
     int fdep[BUFLEN];
     int fsize = 0;
-    int depth = 0;
+    int depth = 0, d = 0;
 
     int i, fcnt = 0;
     for (i = 0; i < BUFLEN; i++) {
@@ -1041,9 +1129,18 @@ void doTree() {
     memset(ftype, (char)0, BUFLEN);
     memset(fdep, 0, BUFLEN);
 
-    fsize = makeTree(depth, checkDir, fname, ftype, fdep, 0);
-    printf("fsizse : %d\n, depth : %d\n", fsize, depth);
+    fsize = makeTree(d, checkDir, fname, ftype, fdep, 0);
+    printTree(fsize, fname, ftype, fdep, 0);
+    
+    /*
+    for(i=0; i< fsize; i++) {
+        printf("fdep[%d]:%d\n", i, fdep[i]);
+        if (fdep[i] > depth)
+            depth = fdep[i];
+    }*/
+    printf("\nfsize : %d\n, depth : %d\n", fsize, depth);
     //fsize = fsize - (depth*2); //실제 총 파일 개수
+    /*
     for(i = 0; i < fsize; i++) {
         if(ftype[i] == 'c')
             continue;
@@ -1054,7 +1151,7 @@ void doTree() {
         else
             printf("%s\n", fname[i]); 
     }
-
+    */
     //printTree(depth, checkDir, fname, ftype);
 	return;
 }
