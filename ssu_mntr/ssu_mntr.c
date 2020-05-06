@@ -935,7 +935,7 @@ int makeTree(int depth, char *dname, char (*fname)[BUFLEN], char *ftype, int *fd
     char fpath[BUFLEN], tmp[BUFLEN];
     char newdname[BUFLEN];
     struct stat statbuf;
-    int size = 0;
+    int size = 0, dsize=0;
 
     if ((fcnt = scandir(dname, &filelist, NULL, alphasort)) == -1) {
         fprintf(stderr, "scandir error for checkDir\n");
@@ -960,6 +960,7 @@ int makeTree(int depth, char *dname, char (*fname)[BUFLEN], char *ftype, int *fd
                 depth++;
             }
             else {
+                
                 ftype[i] = 'r'; //무시
                 fdep[i] = depth;
             }
@@ -977,19 +978,22 @@ int makeTree(int depth, char *dname, char (*fname)[BUFLEN], char *ftype, int *fd
             return;
         }
         
-        if ((statbuf.st_mode & S_IFMT) == S_IFREG) {
-            strcpy(fname[i], tmp);
-            ftype[i] = 'f'; 
-            fdep[i] = depth;
-        }
-        else if ((statbuf.st_mode & S_IFMT) == S_IFDIR) {
+        if ((statbuf.st_mode & S_IFMT) == S_IFDIR) {
             //printTree(depth, dname, fname, ftype);
             strcpy(fname[i], tmp);
             ftype[i] = 'd';
             fdep[i] = depth;
             sprintf(newdname, "%s/%s", dname, tmp);
-            size += makeTree(depth+1, newdname, fname, ftype, fdep, i+1);
+            dsize = makeTree(depth+1, newdname, fname, ftype, fdep, i+1);
+            size += dsize;
+            i += dsize;
         }
+        else if ((statbuf.st_mode & S_IFMT) == S_IFREG) {
+            strcpy(fname[i], tmp);
+            ftype[i] = 'f'; 
+            fdep[i] = depth;
+        }
+        idx = i;
     }
     return size;
     
@@ -997,7 +1001,7 @@ int makeTree(int depth, char *dname, char (*fname)[BUFLEN], char *ftype, int *fd
 
 
 void printTree(int fsize, char (*fname)[BUFLEN], char *ftype, int *fdep, int idx) {
-    int i, j, k;
+    int i, j, k, l;
     int fcnt = 0;
     char tab[10] = "\t\t";
     char line[13] = "------------";
@@ -1005,8 +1009,6 @@ void printTree(int fsize, char (*fname)[BUFLEN], char *ftype, int *fdep, int idx
 
     for (i = idx; i < fsize; i++) {
         depth = fdep[i];
-        if (depth ==2)
-            printf("depth2\n");
         if (ftype[i] == 'c') {
             printf("check%s", line);
             continue;
@@ -1015,103 +1017,107 @@ void printTree(int fsize, char (*fname)[BUFLEN], char *ftype, int *fdep, int idx
         else if(ftype[i] == 'f') {
             if (ftype[i-1] == 'p') { //첫 번째 출력되는 일반 파일
                 printf("%s", fname[i]);
+                continue;
             }
-            else { //두번째 이후 출력되는 일반 파일
-                if (ftype[i-1] == 'f' && ftype[i-2] == 'p')
+            if (depth < 5) {
+                if (ftype[i-1] == 'f' && ftype[i-2] == 'p') //두 번째 출력되는 일반파일에 공백추가
                     printf("\n");
-                if (fdep[i] < 5) {
-                    for (j = 0; j < depth; j++)    
-                        printf("%s|", tab);
+                    
+                //세 번째 이후 출력되는 파일
+                for (k = 0; k < 4; k++) {
+                    for (j = 0; j < depth; j++) { 
+                        if (j == 0)
+                            printf("%s|", tab);
+                        else {
+                            printf("%s", tab);
+                            for(l = 0; l < j; l++)
+                                printf(" ");
+                            printf("|");
+                        }
+                    }
+                    if (k == 3)
+                        break;
                     printf("\n");
-                    for (j = 0; j < depth; j++)    
-                        printf("%s|", tab);
-                    printf("\n");
-                    for (j = 0; j < depth; j++)    
-                        printf("%s|", tab);  
-                    printf("\n");
-                    for (j = 0; j < depth; j++)
-                        printf("%s|", tab);      
                 }
-                else {
-                    for (j = 0; j < depth; j++) 
-                        printf("%s|", tab);
-                    printf("\n");
-                    for (j = 0; j < depth; j++) 
-                        printf("%s|", tab);
-                }
-                printf("-%s\n", fname[i]);
             }
+            else { //depth가 깊어져서 길이 부족해질 때
+                    for (j = 0; j < depth; j++) { 
+                        if (j == 0)
+                            printf("%s|", tab);
+                        else
+                            printf("%s |", tab);
+                    }
+                    printf("\n");
+                    for (j = 0; j < depth; j++) { 
+                        if(j == 0)
+                            printf("%s|", tab);
+                        else {
+                            printf("%s", tab);
+                            for(l = 0; l < j; l++)
+                                printf(" ");
+                            printf("|");
+                        }
+                    }
+            }
+            
+            printf("-%s\n", fname[i]); 
         }
         else if (ftype[i] == 'd') {
-                if (fdep[i] < 5) {
-                    for (j = 0; j < depth; j++)    
-                        printf("%s|", tab);
-                    printf("\n");
-                    for (j = 0; j < depth; j++)    
-                        printf("%s|", tab);
-                    printf("\n");
-                    for (j = 0; j < depth; j++)    
-                        printf("%s|", tab);  
-                    printf("\n");
-                    for (j = 0; j < depth; j++)
-                        printf("%s|", tab);      
-                }
-                else {
-                    for (j = 0; j < depth; j++) 
-                        printf("%s|", tab);
-                    printf("\n");
-                    for (j = 0; j < depth; j++) 
-                        printf("%s|", tab);
-                }
-            printf("+%s%s", fname[i], line);
-            printTree(fsize, fname, ftype, fdep, i+1);
-        }
-        if (fdep[i] > fdep[i+1]) //재귀호출시 종료조건
-            return;
-}
-
-    /*for(i = 0; i < BUFLEN; i++) {
-        if(!strcmp(fname[i], ".")) {
-            if(ftype[i]=='c')
-                printf("check%s",line);
-            else {
-                for(j = 0; j <= depth; j++)
-                    printf("\t\t\t");
+                
+            if (ftype[i] == 'c') {
+                printf("check%s", line);
+                continue;
+            }
+            if (ftype[i-1] == 'p') {
                 printf("+%s%s", fname[i],line);
+                continue;
             }
-            continue;
-        }
-
-        if(!strcmp(fname[i], "..")) {
-            continue;
-        }
-
-        if(ftype == 'f') {
-            if(fcnt == 0) {
-                printf("-%s\n",fname[i]);
-                if (depth < 5) {
-                    for(j=4; j > depth; j--) {
-                        for(k=0; k<=depth; k++)
-                            printf("\t\t\t");
-                        printf("|\n");
-                    }
-                    //printf("\n");
-                }
-                else {
-                    for(j=4; j > depth; j--) {
-                        for(k=0; k<=depth; k++)
-                            printf("\t\t\t");
-                    }
-                }
         
+            if (depth < 5) {
 
+                if (ftype[i-1] == 'f' && ftype[i-2] =='p') 
+                    printf("\n");
 
+                for (k = 0; k < 4; k++) {
+                    for (j = 0; j < depth; j++) { 
+                        if (j==0)
+                            printf("%s|", tab);
+                        else {
+                            printf("%s", tab);
+                            for(l =0; l < j; l++) {
+                                printf(" ");
+                            }
+                            printf("|");
+                        }
+                    }
+                    if (k == 3)
+                        break;
+                    printf("\n");
+                }
             }
+            else { //depth가 깊어져서 길이 부족해질 때
+                    for (j = 0; j < depth; j++) { 
+                        if (j == 0)
+                            printf("%s|", tab);
+                        else
+                            printf("%s |", tab);
+                    }
+                    printf("\n");
+                    for (j = 0; j < depth; j++) { 
+                        if(j==0)
+                            printf("%s|", tab);
+                        else {
+                            printf("%s", tab);
+                            for (l = 0; l < j; l++) 
+                                printf(" ");
+                            printf("|");
+                        }
+                    } 
+            }
+            printf("+%s%s", fname[i], line);
         }
-    } */
-
+    }
 }
-
 
 void doTree() {
 
@@ -1132,13 +1138,23 @@ void doTree() {
     fsize = makeTree(d, checkDir, fname, ftype, fdep, 0);
     printTree(fsize, fname, ftype, fdep, 0);
     
-    /*
+    
+
+    
     for(i=0; i< fsize; i++) {
-        printf("fdep[%d]:%d\n", i, fdep[i]);
+        //printf("fdep[%d]:%d\n", i, fdep[i]);
         if (fdep[i] > depth)
             depth = fdep[i];
+    }
+
+   /* 
+    printf("\nfsize : %d, depth : %d\n", fsize, depth);
+    for (i=0; i<fsize; i++) {
+        printf("[%d][%c]fname = %s\n", fdep[i],ftype[i], fname[i]);
     }*/
-    printf("\nfsize : %d\n, depth : %d\n", fsize, depth);
+   
+
+
     //fsize = fsize - (depth*2); //실제 총 파일 개수
     /*
     for(i = 0; i < fsize; i++) {
