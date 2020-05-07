@@ -212,7 +212,7 @@ void do_Monitor(char *logFile) {
 
 		if (cnt1 < cnt2) { //파일의 생성이 일어난 경우
             if ((logfp = fopen(logFile, "a")) == NULL) {
-		        fprintf("fopen error for %s\n", logFile);
+		        fprintf(stderr, "fopen error for %s\n", logFile);
 		        return;
 	        }
             for (i = 0; i < cnt1; i++) {
@@ -327,7 +327,16 @@ void do_Prompt() {
 			doDelete(argc, argv);
 		}
 		else if (strstr(command, "size") != NULL) {
-			doSize();
+			ptr = strtok(command, " ");
+            while (ptr != NULL) {
+                strcpy(argv[argc++], ptr);
+                ptr = strtok(NULL, " ");
+            }
+            if (argc < 2) {
+                fprintf(stderr, "usage : SIZE [FILENAME] [OPTION]\n");
+                continue;
+            }
+            doSize(argc, argv);
 		}
 		else if (strstr(command, "recover") != NULL) { //recover
 			ptr = strtok(command, " ");
@@ -345,8 +354,7 @@ void do_Prompt() {
 			doTree();
 		}
 		else {
-			//doHelp();
-			doHelp2();
+			doHelp();
 		}
 	}
 	printf("모니터링을 종료합니다\n");
@@ -393,7 +401,6 @@ long getDirSize(char *dirName) {
 	char tmp[BUFLEN];
 	int type;
 	off_t dsize = 0;
-
 	if ((dp = opendir(dirName)) == NULL) {
 		fprintf(stderr, "opendir error for %s\n", dirName);
 		return 0;
@@ -421,24 +428,6 @@ long getDirSize(char *dirName) {
 	closedir(dp);
 	return dsize;
 }
-/*
-int compTime2(struct tm t1, struct tm t2) { //t2에 변화가 생긴경우 1리턴, 없는경우 0리턴
-    
-    if (t1.tm_year < t2.tm_year)
-        return true;
-    
-    if (t1.tm_mon < t2.tm_mon)
-        return true;
-
-    if (t1.tm_mday < t2.tm_mday)
-        return true;
-
-    if (t1.tm_hour < t2.tm_hour)
-        return true;
-    
-    if (t1.tm_min < t2.tm_min)
-        return true;
-}*/
 
 int compTime(struct tm t1, struct tm t2) { //t1이 오래되면 1, t2가 오래되면 0 리턴
 
@@ -790,8 +779,112 @@ void doDelete(int argc, char(*argv)[BUFLEN]) {
 	return;
 }
 
+int get_path(char *path, char *fname, char *pathname, int depth, int curdepth) {
+//depth=0 :fname이름을 가진 파일(일반파일/디렉토리)찾아서 경로를 pathname에 저장
+//depth>0: 해당 depth만큼의 파일 상대경로와 사이즈 출력
+    struct dirent *dirp;
+   struct stat statbuf;
+   DIR *dp;
+   char tmp[BUFLEN], nxtpath[BUFLEN];
+   int res = false;
+   off_t fsize = 0;
 
-void doSize() {
+   
+   if (depth != 0 && curdepth > depth) {
+       return false;
+   }
+
+   if ((dp = opendir(path)) == NULL) { //현재 실행파일의 경로
+        fprintf(stderr, "opendir error for %s\n", path);
+        return false;
+   }
+
+   while ((dirp = readdir(dp)) != NULL) {
+       if (!strcmp(dirp->d_name, ".") || !strcmp(dirp->d_name, ".."))
+           continue;
+       sprintf(tmp, "%s/%s", path, dirp->d_name);
+       if (stat(tmp, &statbuf) < 0) {
+           fprintf(stderr, "stat error\n");
+           return false;
+       }
+
+       if ((statbuf.st_mode & S_IFMT) == S_IFREG) {
+           if (depth == 0) { //d옵션 사용 X
+           if(!strcmp(dirp->d_name, fname)) {
+                strcpy(pathname, tmp);
+                return true;
+           }
+           }
+           else if (curdepth <= depth) { //d옵션 사용 O
+               fsize = statbuf.st_size;
+               printf("%ld      %s\n", fsize, tmp);
+           }
+       }
+
+       else if ((statbuf.st_mode & S_IFMT) == S_IFDIR) {
+           if (depth == 0) { //d옵션 사용 X
+           if (!strcmp(dirp->d_name, fname)) {
+               strcpy(pathname, tmp);
+               return true;
+           }
+           else {
+                strcpy(nxtpath, tmp);
+                res = get_path(nxtpath, fname, pathname, depth, curdepth);
+                if (res)
+                    return true;
+            }
+           }
+            else if (curdepth <= depth) { //d옵션 사용 O
+                fsize = getDirSize(tmp);
+                printf("%ld     %s\n", fsize, tmp);
+                get_path(tmp, fname, pathname, depth, curdepth+1);
+            }
+       }
+   }
+
+}
+
+void doSize(int argc, char (*argv)[BUFLEN]) {
+    char fname[BUFLEN], pathname[BUFLEN], path[BUFLEN] = ".";
+    char *ptr;
+    int number = 0, i, dOption = false;
+    long fsize;
+    int curdepth = 1;
+
+    strcpy(fname, rtrim(argv[1]));
+
+    if (argc == 4) { //옵션 저장
+        if ((ptr = strstr(argv[2], "-d")) != NULL)
+            dOption = true;
+        else {
+            fprintf(stderr, "option error!\n");
+            return;
+        }
+        number = atoi(argv[3]);
+    }
+
+    chdir(workDir); //상대경로를 얻기 위해 현재 실행 디렉토리로 이동
+   
+    if (argc == 2) { 
+        if (get_path(path, fname, pathname, number, curdepth) == 0) {
+            fprintf(stderr, "get_path error\n");
+            return;
+        }
+        if ((fsize = getDirSize(pathname)) == 0) {
+            fprintf(stderr, "getDirSize error\n");
+            return;
+        }
+        printf("%ld     %s\n", fsize, pathname);
+    }
+    else if (argc = 4) { //옵션 사용한 경우
+        get_path(path, fname, pathname, 0, curdepth);
+        fsize = getDirSize(pathname);
+        printf("%ld     %s\n", fsize, pathname);
+        strcpy(path, pathname);
+        curdepth = 2;
+        get_path(path, fname, pathname, number, curdepth);
+    }
+
 
 	return;
 }
@@ -985,9 +1078,6 @@ void doRecover(int argc, char(*argv)[BUFLEN]) {
 				return;
 		}
 
-		//recover 한 후에, 다른 파일 이름 delimeter 다시 정리
-		//relocateDup(infoDir, fname); //같은 이름 가진 파일들 정렬 =>필요x
-		//relocateDup(filesDir, fname);
 	}
 	else {
 		//같은 파일 없는경우 => OK
@@ -1035,15 +1125,10 @@ int makeTree(int depth, char *dname, char(*fname)[BUFLEN], char *ftype, int *fde
 	}
 	size = fcnt;
 	//printf("경로:");
-	system("pwd");
-	printf("파일 개수 %d\n", fcnt);
 	for (fidx = 0, i = idx; fidx < fcnt; fidx++, i++) {
 		chdir(dname);
 		//printf("%s\n", filelist[i]->d_name);
 		strcpy(tmp, filelist[fidx]->d_name);
-		printf("현재 depth : %d\n", depth);
-		if (depth == 1)
-			printf("파일 : %s\n", tmp);
 		if (!strcmp(tmp, ".")) {
 			strcpy(fname[i], tmp);
 			if (depth == 0) {
@@ -1052,7 +1137,6 @@ int makeTree(int depth, char *dname, char(*fname)[BUFLEN], char *ftype, int *fde
 				depth++;
 			}
 			else {
-
 				ftype[i] = 'r'; //무시
 				fdep[i] = depth;
 			}
@@ -1209,6 +1293,7 @@ void printTree(int fsize, char(*fname)[BUFLEN], char *ftype, int *fdep, int idx)
 			printf("+%s%s", fname[i], line);
 		}
 	}
+    printf("\n");
 }
 
 void doTree() {
@@ -1232,14 +1317,14 @@ void doTree() {
 
 
 
-
+/*
 	for (i = 0; i < fsize; i++) {
-		//printf("fdep[%d]:%d\n", i, fdep[i]);
+		printf("fdep[%d]:%d\n", i, fdep[i]);
 		if (fdep[i] > depth)
 			depth = fdep[i];
 	}
 
-	/*
+	
 	 printf("\nfsize : %d, depth : %d\n", fsize, depth);
 	 for (i=0; i<fsize; i++) {
 		 printf("[%d][%c]fname = %s\n", fdep[i],ftype[i], fname[i]);
@@ -1264,23 +1349,8 @@ void doTree() {
 	return;
 }
 
-void doHelp() {
-	printf("Usage : COMMAND [OPTION]\n");
-	printf("COMMAND : \n");
-	printf(" delete [FILENAME] [END_TIME] [OPTION]      지정한 END_TIME 시간에 자동으로 파일 삭제\n");
-	printf("                    OPTION : \n");
-	printf("                            -i              삭제시 'trash' 디렉토리로 삭제 파일과 정보를 이동시키지 않고 파일 삭제\n");
-	printf("                            -r              지정한 시간에 삭제시 삭제 여부 재확인\n\n");
-	printf(" size [FILENAME] [OPTION]                   파일의 경로(상대경로), 파일 크기를 출력\n");
-	printf("                    OPTION : \n");
-	printf("                            -d NUMBER       NUMBER 단계 만큼의 하위 디렉토리까지 출력\n\n");
-	printf(" recover [FILENAME] [OPTION]                trash 디렉토리 내의 파일을 원래 경로로복구\n");
-	printf("                    OPTION : \n");
-	printf("                            -l              trash 디렉토리 밑에 있는 파일과 삭제 시간들을 삭제시간이 오래된 순으로 출력 후, 명령어 진행\n\n");
-	printf(" tree                                       check 디렉토리의 구조를 tree 형태로 보여줌\n\n");
-}
 
-void doHelp2() {
+void doHelp() {
 	printf("Usage : COMMAND [OPTION]\n\n");
 	printf("COMMAND : \n");
 	printf(" delete [FILENAME] [END_TIME] [OPTION]      지정한 END_TIME 시간에 자동으로 파일 삭제\n");
