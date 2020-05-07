@@ -779,20 +779,13 @@ void doDelete(int argc, char(*argv)[BUFLEN]) {
 	return;
 }
 
-int get_path(char *path, char *fname, char *pathname, int depth, int curdepth) {
-//depth=0 :fname이름을 가진 파일(일반파일/디렉토리)찾아서 경로를 pathname에 저장
-//depth>0: 해당 depth만큼의 파일 상대경로와 사이즈 출력
+int get_path(char *path, char *fname, char *pathname) {
+//fname이름을 가진 파일(일반파일/디렉토리)찾아서 경로를 pathname에 저장
     struct dirent *dirp;
    struct stat statbuf;
    DIR *dp;
    char tmp[BUFLEN], nxtpath[BUFLEN];
    int res = false;
-   off_t fsize = 0;
-
-   
-   if (depth != 0 && curdepth > depth) {
-       return false;
-   }
 
    if ((dp = opendir(path)) == NULL) { //현재 실행파일의 경로
         fprintf(stderr, "opendir error for %s\n", path);
@@ -809,38 +802,82 @@ int get_path(char *path, char *fname, char *pathname, int depth, int curdepth) {
        }
 
        if ((statbuf.st_mode & S_IFMT) == S_IFREG) {
-           if (depth == 0) { //d옵션 사용 X
            if(!strcmp(dirp->d_name, fname)) {
                 strcpy(pathname, tmp);
                 return true;
            }
-           }
-           else if (curdepth <= depth) { //d옵션 사용 O
-               fsize = statbuf.st_size;
-               printf("%ld      %s\n", fsize, tmp);
-           }
        }
 
        else if ((statbuf.st_mode & S_IFMT) == S_IFDIR) {
-           if (depth == 0) { //d옵션 사용 X
            if (!strcmp(dirp->d_name, fname)) {
                strcpy(pathname, tmp);
                return true;
            }
            else {
                 strcpy(nxtpath, tmp);
-                res = get_path(nxtpath, fname, pathname, depth, curdepth);
+                res = get_path(nxtpath, fname, pathname);
                 if (res)
                     return true;
             }
-           }
-            else if (curdepth <= depth) { //d옵션 사용 O
-                fsize = getDirSize(tmp);
-                printf("%ld     %s\n", fsize, tmp);
-                get_path(tmp, fname, pathname, depth, curdepth+1);
-            }
        }
+       if(res)
+           return true;
+       else
+           return false;
    }
+
+}
+
+int do_dOption(char *printpath,char *statpath, int depth, int curdepth) {
+    int cnt = 0;
+    int i;
+    struct stat statbuf;
+    char nxtpath1[BUFLEN],nxtpath2[BUFLEN], tmp[BUFLEN], fname[BUFLEN];
+    struct dirent **filelist;
+    long fsize;
+    
+    if (curdepth > depth)
+        return false;
+    
+
+    if ((cnt = scandir(statpath, &filelist, except_tmp_file, alphasort)) == NULL) {
+        fprintf(stderr, "scandir error for %s\n", printpath);
+        return false;
+    }
+
+    for (i = 0; i < cnt; i++) { 
+        
+        //printf("파일이름 : %s\n" ,filelist[i]->d_name); 
+        
+        sprintf(fname, "%s/%s", printpath, filelist[i]->d_name); //출력용 상대경로
+        //printf("출력용:%s\n", fname);
+
+        sprintf(tmp, "%s/%s", statpath, filelist[i]->d_name); //stat용 
+       // printf("tmp : %s\n" , tmp);
+        
+        
+        if (stat(tmp, &statbuf) < 0) {
+            fprintf(stderr, "stat error\n");
+            return false;
+        }
+        if ((statbuf.st_mode & S_IFMT) == S_IFREG) {
+            if (curdepth <= depth) {
+                fsize = statbuf.st_size;
+                printf("%ld     %s\n", fsize, fname);
+            }
+        }
+        else if ((statbuf.st_mode & S_IFMT) == S_IFDIR) {
+            if (curdepth <= depth) {
+            fsize = getDirSize(tmp);
+            printf("%ld     %s\n", fsize, fname);
+            }
+            if (curdepth < depth) {
+            sprintf(nxtpath1, "%s/%s", printpath, filelist[i]->d_name);
+            sprintf(nxtpath2, "%s/%s", statpath, filelist[i]->d_name);
+            do_dOption(nxtpath1, nxtpath2, depth, curdepth+1);
+            }
+        }
+    }
 
 }
 
@@ -849,7 +886,6 @@ void doSize(int argc, char (*argv)[BUFLEN]) {
     char *ptr;
     int number = 0, i, dOption = false;
     long fsize;
-    int curdepth = 1;
 
     strcpy(fname, rtrim(argv[1]));
 
@@ -866,7 +902,7 @@ void doSize(int argc, char (*argv)[BUFLEN]) {
     chdir(workDir); //상대경로를 얻기 위해 현재 실행 디렉토리로 이동
    
     if (argc == 2) { 
-        if (get_path(path, fname, pathname, number, curdepth) == 0) {
+        if (get_path(path, fname, pathname) == 0) {
             fprintf(stderr, "get_path error\n");
             return;
         }
@@ -877,12 +913,11 @@ void doSize(int argc, char (*argv)[BUFLEN]) {
         printf("%ld     %s\n", fsize, pathname);
     }
     else if (argc = 4) { //옵션 사용한 경우
-        get_path(path, fname, pathname, 0, curdepth);
+        get_path(path, fname, pathname);
         fsize = getDirSize(pathname);
         printf("%ld     %s\n", fsize, pathname);
         strcpy(path, pathname);
-        curdepth = 2;
-        get_path(path, fname, pathname, number, curdepth);
+        do_dOption(path, checkDir, number, 2); //depth 2부터 함수로 출력
     }
 
 
