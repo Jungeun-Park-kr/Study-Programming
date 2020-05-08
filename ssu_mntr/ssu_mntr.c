@@ -1104,7 +1104,10 @@ int get_recover_file(char *recoverfile, char *recoverpath, int isDup, int choice
     if (isDup == false) { //중복파일없는경우 해당파일 복구경로 저장후, info는 바로삭제하면됨
         fgets(buf, BUFLEN, fp); //[Trash Info] 필요없는 부분
         fgets(buf, BUFLEN, fp); //파일의 절대 경로가 저장된 부분
-        printf("buf : %s\n", buf);
+        if (strstr(buf, fname) == NULL) { //해당줄에서 파일이름이 검색안되면 경로가 없는것
+            fprintf(stderr, "recover path don't exist!\n"); //에러처리 해줌
+            return false;
+        }
         strcpy(recoverpath, buf); //복구할 경로를 recoverpath에 저장
         fclose(fp);
         remove(pathname); //해당 info파일 더이상 필요 없으므로 삭제
@@ -1123,7 +1126,13 @@ int get_recover_file(char *recoverfile, char *recoverpath, int isDup, int choice
             if (i == choice) {
                 //내가 원하는 부분임
                 fgets(buf, BUFLEN, fp); //절대경로
-                printf("buf : %s\n", buf);
+                
+                if (strstr(buf, fname) == NULL) { //해당 줄에 파일이름이 없다면 경로가 없는것임!
+                    fprintf(stderr, "recover path don't exist!\n");
+                    return false;
+                
+                }
+                
                 strcpy(recoverpath, buf); //원하는 경로 저장
                 fgets(buf, BUFLEN, fp); //dtime
                 fgets(buf, BUFLEN, fp); //mtime
@@ -1144,6 +1153,8 @@ int get_recover_file(char *recoverfile, char *recoverpath, int isDup, int choice
         rename(tmpfile, pathname); //복구 파일을 rename()해서 원본파일 이름과 동일하게 함.
         return true;
     }
+    
+
 }
 
 
@@ -1210,7 +1221,9 @@ void doRecover(int argc, char(*argv)[BUFLEN]) {
 			fprintf(stderr, "printDup error\n");
 			return;
 		}
-        get_recover_file(dupfiles[choice-1], mvfname, true, choice, dupn); 
+        if (get_recover_file(dupfiles[choice-1], mvfname, true, choice, dupn) == 0) {
+            return;  //실패시 0이 리턴됨
+        }
         //dupfile의 복구할 경로를 mvfname에 저장하고, 해당 내용을 info파일에서 삭제
         //선택한 파일의 delimeter 지운 파일 이름으로 recover 해야함
         
@@ -1222,8 +1235,6 @@ void doRecover(int argc, char(*argv)[BUFLEN]) {
 		//복구할 디렉토리(check)에 같은 파일 없는경우 
 		//같은 파일 없어도 복수파일로 인해 딜리미터가 붙은 이름인경우 => 해야함
         if (isExist(filesDir, fname, orgfname)) { 
-            printf("잇음\n");
-            printf("path : %s\n", orgfname);
             strcpy(pathname, orgfname);
         }
 
