@@ -309,11 +309,11 @@ void do_Prompt(int pid) {
 	int argc, i, cnt = 0;
 	char c;
 	char *ptr;
-	int pid2;
+	int curpid;
     while (1) {
         
         //자식 프로세스가 수행한 경우 종료시킴
-
+        
 		argc = cnt = 0;
 		memset(tmp, (char)0, BUFLEN);
 		memset(command, (char)0, BUFLEN);
@@ -324,7 +324,12 @@ void do_Prompt(int pid) {
 		fgets(command, BUFLEN, stdin);
 
 		if (strstr(command, "exit") != NULL) { //exit명령어 사용시 종료
-			break;
+            if (curpid == 0) { //아직 파일 삭제 대기중일 때 exit명령어 사용되는 경우
+                kill(pid, SIGKILL); //삭제 대기중인 부모 프로세스를 죽임 
+                break;
+            }
+            else
+                break;
 		}
 		else if (strstr(command, "delete") != NULL) { //detete
 			ptr = strtok(command, " ");
@@ -336,7 +341,7 @@ void do_Prompt(int pid) {
 				fprintf(stderr, "usage : DELETE [FILENAME] [END_TIME] [OPTION]\n");
 				continue;
 			}
-			doDelete(argc, argv);
+			curpid = doDelete(argc, argv); //자식이 리턴하면 pid2 = 0, 부모가 성공리턴이면 >0
 		}
 		else if (strstr(command, "size") != NULL) {
 			ptr = strtok(command, " ");
@@ -442,84 +447,42 @@ long getDirSize(char *dirName) {
 	return dsize;
 }
 
-int compTime(struct tm t1, struct tm t2) { //t1이 오래되면 1, t2가 오래되면 0 리턴
+void removeOldFile() {
+    oldFileList lists[BUFLEN];
+    int cnt, i;
+    char oldpath[BUFLEN], oldname[BUFLEN],  dupfiles[BUFLEN][BUFLEN];
+    char buf[BUFLEN];
 
-	if (t1.tm_year < t2.tm_year)
-		return true;
-	else if (t1.tm_year + 1900 > t2.tm_year + 1900)
-		return false;
+    cnt = get_old_files(lists);
+    sort_old_files(lists, cnt);
+    //sort한 후, lsits[0]번째 파일이 제일 삭제시간이 오래됨!
+    strcpy(oldname, rtrim(lists[0].fname)); 
 
-	if (t1.tm_mon + 1 < t2.tm_mon + 1)
-		return true;
-	else if (t1.tm_mon + 1 > t2.tm_mon + 1)
-		return false;
+    int dupn = 0;
+    if (isDup(filesDir, oldname, &dupn, dupfiles) < 0) {
+        fprintf(stderr, "isdup error\n");
+        return;
+    }
+    if (dupn == 1) { //파일이 하나 뿐인경우
+        isExist(filesDir, oldname, oldpath); //삭제할 files디렉토리의 원본파일 이름 가져오기
+        printf("삭제할 이름 : %s\n", oldpath);
+        remove(oldpath);
+        //info 디렉토리 파일 정보 삭제하기
+        sprintf(buf, "%s/%s", infoDir, oldname);
+        remove(buf);
+    }
+    else { //중복파일이 존재하는 경우 -> 해당 이름 가진 원본파일 모두 삭제 후 info파일 삭제
+        for(i = 0; i < dupn; i++) {
+            sprintf(buf, "%s/%s", filesDir, dupfiles[i]);
+            remove(buf);
+        }
+        //info디렉토리의 정보 삭제
+        sprintf(buf, "%s/%s", infoDir, oldname);
+        remove(buf);
+    }
+    
 
-	if (t1.tm_mday < t2.tm_mday)
-		return true;
-	else if (t1.tm_mday > t2.tm_mday)
-		return false;
-
-	if (t1.tm_hour < t2.tm_hour)
-		return true;
-	else if (t1.tm_hour > t2.tm_hour)
-		return false;
-
-	if (t1.tm_min < t2.tm_min)
-		return true;
-	else if (t1.tm_min > t2.tm_min)
-		return false;
-
-	if (t1.tm_sec < t2.tm_sec)
-		return true;
-	else if (t1.tm_sec > t2.tm_sec)
-		return false;
 }
-
-/*
-void findOldFile(char *dirName, char *oldest, struct tm oldtm) {
-	struct dirent *dirp;
-	DIR *dp;
-	struct stat statbuf;
-	char fname[BUFLEN];
-	time_t newtime;
-	struct tm newtm;
-
-
-	if ((dp = opendir(dirName)) == NULL) {
-		fprintf(stderr, "opendir error\n");
-		return;
-	}
-	while ((dirp = readdir(dp)) != NULL) {
-		if (!strcmp(dirp->d_name, ".") || !strcmp(dirp->d_name, ".."))
-			continue;
-
-		strcpy(fname, dirName);
-		strcat(fname, "/");
-		strcat(fname, dirp->d_name);
-
-		if (stat(fname, &statbuf) < 0) {
-			fprintf(stderr, "stat error\n");
-			return;
-		}
-
-		if ((statbuf.st_mode & S_IFMT) == S_IFREG) {
-
-			newtime = statbuf.st_mtime;
-			newtm = *gmtime(&newtime);
-			if (!compTime(oldtm, newtm)) { //newtm이 더 오래되면 0리턴
-				//printf("갱신됨 : %s\n", fname);
-				strcpy(oldest, fname);
-				oldtm = newtm;
-			}
-		}
-		else if ((statbuf.st_mode & S_IFMT) == S_IFDIR) {
-			findOldFile(fname, oldest, oldtm);
-		}
-	}
-	printf("oldest : %s\n", oldest);
-	return;
-}
-*/
 
 char *rmvdelimeter(char *str) {
 	char tmp[BUFLEN];
@@ -612,7 +575,6 @@ int makeInfo(char *fname, char *fnamepath, struct tm dtm) {
             fprintf(stderr, "fopen error for %s\n", fname);
             return false;
         }
-        //fprintf(fp, "----------%s----------\n",fname); //새 파일이 추가됨을 알려주는 구분자 추가, 딜리미터가 포함된(files에 저장된 이름) 추가해서 저장되도록 함
     }
 	fprintf(fp, "%s\n", fnamepath);
 	fprintf(fp, "%s", dtime);
@@ -644,23 +606,23 @@ int find_max_num(char *fname) { //files디렉토리 내의 fname을 가진 중�
     }
 
     for (i =0; i < cnt; i++) {
-        if (!strcmp(rmvdelimeter(flist[i]->d_name), fname)) {
+        if (!strcmp(rmvdelimeter(flist[i]->d_name), fname)) { //내가 찾고자하는 파일발견
             strcpy(file, flist[i]->d_name);
 
             s = file;
-            while (*s != '\0' && *s != '*')
+            while (*s != '\0' && *s != '*') //딜리미터 이전까지
                 ++s;
-            ++s;
-            tmpnum = atoi(s);
-            if(tmpnum > max)
+            ++s; //딜리미터 이후 (숫자 얻어오도록)
+            tmpnum = atoi(s); //딜리미터 번호 저장
+            if(tmpnum > max) //max보다 크면 갱신
                 max = tmpnum;
         }
     }
-    return max;
+    return max; //amx리턴
 }
 
 
-void doDelete(int argc, char(*argv)[BUFLEN]) {
+int doDelete(int argc, char(*argv)[BUFLEN]) {
 	char oldest[BUFLEN], oldestfname[BUFLEN];
 	int idx = 0, i;
 	struct stat statbuf;
@@ -682,38 +644,26 @@ void doDelete(int argc, char(*argv)[BUFLEN]) {
     
     pid_t pid;
 
-    /*
 	while (1) { //infoDir크기 확인
 		dsize = getDirSize(infoDir);
 		if (dsize > 2000) { //2KB넘을 경우 제일 오래된 파일 삭제
-			nowt = time(NULL);
-			tm = *localtime(&nowt);
-			//findOldFile(oldest, dtime, isDup); //제일 오래된 파일이름 oldest에 저장됨
-			//위 함수 수행(오래된파일이름, 오래된 시간(문자열), 파일여러개있는지true/false)
-            //findOldFile()로 파일 "이름"(경로X)만 가져옴       
-            //해당 이름으로 files디렉토리에서 찾아서 삭제
-
-            //info는 해당 파일(구분자 제거 후)찾기 -> (여러개 있는경우 해당부분만 삭제), 한개인 경우 해당 파일 통째로 삭제
-            strcpy(oldestfname, rmvpath(oldest)); //경로 제외한 이름만복사
-			remove(oldest); //info 디렉토리 내의 파일 삭제
-			sprintf(oldest, "%s/%s", filesDir, oldestfname);
-			remove(oldest); //files 디렉토리 내의 파일 삭제
+            removeOldFile();	
 		}
 		else
 			break;
-	}*/
+	}
     
 	strcpy(fname, rtrim(argv[1]));
 	if (strlen(fname) < 0) {
 		fprintf(stderr, "file name error!\n", argv[1]);
-		return;
+		return false;
 	}
 
 	if (!isExist(checkDir, fname, fullpath)) { //상대경로(파일이름)로 파일 존재 확인
 		strcpy(tmpbuf, rmvpath(fname));
 		if (!isExist(checkDir, tmpbuf, fullpath)) { //절대경로로 파일 존재 확인
 			fprintf(stderr, "%s file don't exist!\n", fname); //그래도 없으면 메시지 출력 후 종료
-			return;
+			return false;
 		}
 		else { //절대경로이면 파일 이름만 fname에 저장
 			strcpy(fname, tmpbuf);
@@ -732,14 +682,14 @@ void doDelete(int argc, char(*argv)[BUFLEN]) {
         //삭제할 파일이 디렉토리인경우 에러처리
         if ((stat(fullpath, &statbuf)) < 0) {
             fprintf(stderr, "stat error\n");
-            return;
+            return false;
         }
         if ((statbuf.st_mode & S_IFMT) == S_IFDIR) {
             fprintf(stderr, "directory can not use -i option\n");
-            return;
+            return false;
         }
         remove(fullpath); //해당 파일을 trash에 보내지 않고 바로 삭제처리
-        return;
+        return false;
     }
 
 
@@ -750,13 +700,12 @@ void doDelete(int argc, char(*argv)[BUFLEN]) {
 		//모든 파일 저장해서 개수 nums, 파일이름 dupfiles에 저장
 		if (res == 0) {
 			fprintf(stderr, "isDup Error\n");
-			return;
+			return false;
 		}
 		if (nums > 0) { //중복된 파일이 있는경우
-			//파일 이름 뒤에 delimeter숫자 추가해 이름변경 (a.txt*2, a.txt*3, ...)
+			//파일 이름 뒤에 delimeter숫자 추가해 이름변경 (a.txt*1, a.txt*2, ...)
 			strcpy(newname, fname);
             delnum = find_max_num(fname);
-            printf("delnum : %d\n", delnum);
 			sprintf(delimeter, "%c%d", '*', delnum+1); //이렇게 하면 중간꺼 복구 후 다시 삭제하면 겹쳐버림 안됨!!
 			strcat(newname, delimeter); //files파일에 저장할 새로운 이름 생성
             strcpy(fname, newname);
@@ -769,20 +718,20 @@ void doDelete(int argc, char(*argv)[BUFLEN]) {
 		tm = *localtime(&nowt); //삭제시간 저장    
         
         if (makeInfo(fname, fullpath, tm) < 0)
-            return;
+            return false;
         if (intoTrash(fname, fullpath) < 0)
-            return;
-		return;
+            return false;
+		return true;
 	}
 
     //여기부터는 삭제시간 있는 경우
 	//삭제시간 기다리기 - 커널은 대기 불가능하므로 fork()로 자식 프로세스가 대기 후 삭제 수행
     if ((pid = fork()) < 0 ){
         fprintf(stderr, "fork error\n");
-        return ;
+        return false;
     }
     else if (pid == 0) { //자식프로세스는 doPrompt를 수행하려 간다
-        return;
+        return pid;
     }
 
     else if (pid > 0) { //부모프로세스인 경우 삭제시간을 기다린 후 수행
@@ -797,7 +746,7 @@ void doDelete(int argc, char(*argv)[BUFLEN]) {
 	sprintf(curtime, "%02d:%02d", tm.tm_hour, tm.tm_min);
 	if ((strcmp(curdate, deldate) == 1 || strcmp(curtime, deltime) == 1)) {
 		fprintf(stderr, "delete time not be past!\n");
-		return;
+		return false;
 	}
 
     while(1) {
@@ -828,29 +777,29 @@ void doDelete(int argc, char(*argv)[BUFLEN]) {
 
 
 	//삭제시간 된 경우
-	if (iOption) {
+	if (iOption) { //-i옵션 사용된 경우
         //삭제할 파일이 디렉토리인경우 에러처리
         if ((stat(fullpath, &statbuf)) < 0) {
             fprintf(stderr, "stat error\n");
-            return;
+            return false;
         }
         if ((statbuf.st_mode & S_IFMT) == S_IFDIR) {
             fprintf(stderr, "directory can not use -i option\n");
-            return;
+            return false;
         }
 		remove(fullpath);
-        return;
+        return true;
 	}
 	//i옵션 없는경우
 	nowt = time(NULL);
 	tm = *localtime(&nowt); //삭제시간 저장
     
     if (makeInfo(fname, fullpath, tm) < 0) //infoDir에 삭제할 파일정보 저장
-        return;
+        return false;
 	if (intoTrash(fname, fullpath) < 0) //삭제파일 filesDir로 이동!(rename)
-        return;
+        return false;
     
-	return;
+	return true;
     } 
 }
 
@@ -1066,7 +1015,6 @@ int printDup(int num, char *fname, char(*dupFiles)[BUFLEN]) {
         strcpy(buf2, rtrim(buf)); //M시간 저장
 		printf("%d. %s  %s %s\n", i++, fname, buf1, buf2); //파일 정보 출력
 	}
-    fflush(stdout);
     fclose(fp);
 
     if(i == num)
@@ -1111,6 +1059,7 @@ int get_recover_file(char *recoverfile, char *recoverpath, int isDup, int choice
         fgets(buf, BUFLEN, fp); //파일의 절대 경로가 저장된 부분
         if (strstr(buf, fname) == NULL) { //해당줄에서 파일이름이 검색안되면 경로가 없는것
             fprintf(stderr, "recover path don't exist!\n"); //에러처리 해줌
+            fclose(fp);
             return false;
         }
         strcpy(recoverpath, buf); //복구할 경로를 recoverpath에 저장
@@ -1122,6 +1071,8 @@ int get_recover_file(char *recoverfile, char *recoverpath, int isDup, int choice
     else { //중복파일있는경우 해당 info의 경로만 저장한 후, 해당  내용만 지워줘야 함.    
         if ((fp2 = fopen(tmpfile, "w")) == NULL) { //복구할 파일 제외한 부분은 파일에 남겨두기 위한 임시파일
             fprintf(stderr, "fopen error for %s\n", tmpfile);
+            fclose(fp);
+            fclose(fp2);
             return false;
         }
 
@@ -1223,18 +1174,18 @@ int get_old_files(oldFileList lists[BUFLEN]) {
         fgets(buf, BUFLEN, fp); //[Trash info]부분 필요x
         if(dupn == 1) { //중복파일이 없는경우 (하나만 존재)
             //printf("중복없음\n");
-            strcpy(lists[j].fname, fname);
+            strcpy(lists[j].fname, rtrim(fname)); 
             fgets(buf, BUFLEN, fp); //경로부분 필요x
             fgets(buf, BUFLEN, fp); //dtime 필요O
-            strcpy(lists[j++].dtime, buf);
+            strcpy(lists[j++].dtime, rtrim(buf)); //개행 제거해서 저장해야함
             fclose(fp);
         }
         else { //여러개인 경우
             for (k=0; k < dupn; k++) { //중복이 있는 경우 여러개의 시간을 다 저장
-                strcpy(lists[j].fname, fname);
+                strcpy(lists[j].fname, rtrim(fname)); //개행 제거 후 저장
                 fgets(buf, BUFLEN, fp); //경로 필요x
                 fgets(buf, BUFLEN, fp); //dtime 저장해야함
-                strcpy(lists[j++].dtime, buf);
+                strcpy(lists[j++].dtime, rtrim(buf));
                 fgets(buf, BUFLEN, fp); //mtime 필요x
             }
             fclose(fp);
@@ -1242,15 +1193,113 @@ int get_old_files(oldFileList lists[BUFLEN]) {
     }
     return j;
 }
+/*
+int compTime(char *t1, char *t2) {
+    //t1이 오래되면 1리턴, 같으면 0리턴, t2가 오래됐으면 0리턴
+
+    char tm1[BUFLEN], tm2[BUFLEN];
+    char *ptr1, *ptr2;
+    int y1, m1, d1, h1, m1, s1, y2, m2, d2, h2, m2, s2;
+    char *buf;
+    int i;
+
+    strcpy(tm1, t1);
+    strcpy(tm2, t2);
+    
+    ptr1 = tm1;
+    ptr2 = tm2;
+    
+    for (i = 0; i < 3; i++) { //처음 D :  날림
+        ++ptr1;
+        ++ptr2;
+    }
+
+        
+    while (*ptr1 != ' ') {
+        while (*ptr1 != '-') {
+            
+        }
+    }
+
+    ptr = strtok(tm1, "D : ");
+    while (ptr != NULL) {
+        strcpy(buf, ptr);
+
+        ptr = strtok("-");
+    }
+    ptr = strtok(NULL, " ");
+    while (ptr != NULL) {
+        strcpy(buf, ptr);
+        ptr = strtok(":");
+    }
+    
+}*/
+
+int compareTime(char *tm1, char *tm2) { //문자열로 된 시간 두개를 비교하여 tm1이 오래된 경우 true(1)을 리턴, tm2가 더 오래된 경우 false(0)을 리턴
+    char t1[BUFLEN], t2[BUFLEN];
+    char buf[BUFLEN], date1[BUFLEN], time1[BUFLEN], date2[BUFLEN], time2[BUFLEN];
+    char c1,c2;
+
+    int y1,m1,d1, y2,m2,d2, h1, mm1, s1, h2, mm2, s2;
+    strcpy(t1, tm1);
+    strcpy(t2, tm2);
+
+    sscanf(t1+3, "%s %s",date1, time1);
+    sscanf(t2+3, "%s %s",date2, time2);
+
+    sscanf(date1, "%d%c%d%c%d", &y1,&c1,&m1,&c2,&d1);
+    sscanf(time1, "%d%c%d%c%d", &h1,&c1,&mm1,&c2,&s1);
+
+    sscanf(date2, "%d%c%d%c%d", &y2,&c1,&m2,&c2,&d2);
+    sscanf(time2, "%d%c%d%c%d", &h2,&c1,&mm2,&c2,&s2);
+
+    //printf("t1 : %d-%d-%d %d:%d:%d\n", y1,m1,d1, h1,mm1,s1);
+    //printf("t2 : %d-%d-%d %d:%d:%d\n", y2,m2,d2, h2,mm2,s2);
+    
+    if (y1 > y2)
+        return true;
+    else if (y1 < y2)
+        return false;
+    
+    if (m1 > m2)
+        return true;
+    else if (m1 < m2)
+        return false;
+
+    if (d1 > d2)
+        return true;
+    else if (d1 < d2)
+        return false;
+    
+    if (h1 > h2)
+        return true;
+    else if (h1 < h2)
+        return false;
+
+    if (mm1 > mm2)
+        return true;
+    else if (mm1 < mm2)
+        return false;
+    
+    if (s1 > s2)
+        return true;
+    else if (s1 < s2)
+        return false;
+    else
+        return -1;
+}
 
 void sort_old_files(oldFileList lists[BUFLEN], int cnt) {
     int i, j;
+    char t1[BUFLEN], t2[BUFLEN];
     oldFileList tmp;
 
     //인덱스 0번부터 오래된 파일이 정렬되도록 함
-    for(i = 0; i < cnt-1; i++) {
-        for (j = 0; j < cnt-i-1; j++) {
-            if (strcmp(lists[j].dtime, lists[j+1].dtime) > 1) {//삭제시간이 최근인게 더 앞에 있는경우 -> swap해서 오래된 순으로 되도록 함
+    for(i = cnt-1; i > 0; i--) {
+        for (j = 0; j < i; j++) {
+            strcpy(t1, lists[j].dtime);
+            strcpy(t2, lists[j+1].dtime);
+            if (compareTime(t1,t2) == 1) {//삭제시간이 최근인게 더 앞에 있는경우 -> swap해서 오래된 순으로 되도록 함
                 tmp = lists[j];
                 lists[j] = lists[j+1];
                 lists[j+1] = tmp;
@@ -1264,12 +1313,12 @@ void do_lOption() {
     oldFileList lists[BUFLEN];
     int i, cnt;
 
-    cnt = get_old_files(lists);
-    sort_old_files(lists, cnt);
-    for (i = 0; i < cnt; i++) {
+    cnt = get_old_files(lists); //trash info파일에 있는 모든 파일의 D시간 가져오기
+    sort_old_files(lists, cnt); //삭제시간이 오래된 순으로 정렬
+    for (i = 0; i < cnt; i++) { //오래된 순으로 출력
         printf("%d %s\t\t\t%s\n", i+1, lists[i].fname, lists[i].dtime);
     }
-
+    printf("\n");
     return;
 }
 
