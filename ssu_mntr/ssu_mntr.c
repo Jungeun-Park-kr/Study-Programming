@@ -660,14 +660,19 @@ int doDelete(int argc, char(*argv)[BUFLEN]) {
 	}
 
 	if (!isExist(checkDir, fname, fullpath)) { //상대경로(파일이름)로 파일 존재 확인
-		strcpy(tmpbuf, rmvpath(fname));
-		if (!isExist(checkDir, tmpbuf, fullpath)) { //절대경로로 파일 존재 확인
-			fprintf(stderr, "%s file don't exist!\n", fname); //그래도 없으면 메시지 출력 후 종료
-			return false;
-		}
-		else { //절대경로이면 파일 이름만 fname에 저장
+		if(get_path(checkDir, fname, fullpath) == 0) { //파일이름으로 디렉토리 존재 확인
+            strcpy(tmpbuf, rmvpath(fname)); 
+	    	if (!isExist(checkDir, tmpbuf, fullpath)) { //절대경로로 파일 존재 확인
+                if (get_path(checkDir, tmpbuf, fullpath) == 0) { //절대경로로 파일아닌 디렉토리도 확인
+			        fprintf(stderr, "%s file don't exist!\n", fname); //그래도 없으면 메시지 출력 후 종료
+			        return false;
+                }
+		    }
+        
+		    else { //절대경로이면 파일 이름만 fname에 저장
 			strcpy(fname, tmpbuf);
-		}
+		    }
+        }
 	}
 
 	for (i = 0; i < argc; i++) { //옵션저장
