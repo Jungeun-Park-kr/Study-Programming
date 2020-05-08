@@ -32,6 +32,7 @@ void ssu_mntr() {
 	int logfd;
 	char logFile[BUFLEN];
 	char saved_path[BUFLEN];
+    int pid;
 
 	getcwd(saved_path, BUFLEN);
 	strcpy(checkDir, saved_path);
@@ -75,8 +76,9 @@ void ssu_mntr() {
 	else if (dmpid == 0) { //생성된 데몬 프로세스
 		do_Monitor(logFile);
 	}
-
-	do_Prompt();
+    
+    pid = getpid();
+	do_Prompt(pid);
 
 	return;
 }
@@ -294,14 +296,18 @@ void do_Monitor(char *logFile) {
 }
 
 
-void do_Prompt() {
+void do_Prompt(int pid) {
 	char command[BUFLEN];
 	char tmp[BUFLEN];
 	char argv[COMMAND_ARGC][BUFLEN];
 	int argc, i, cnt = 0;
 	char c;
 	char *ptr;
-	while (1) {
+	int pid2;
+    while (1) {
+        
+        //자식 프로세스가 수행한 경우 종료시킴
+
 		argc = cnt = 0;
 		memset(tmp, (char)0, BUFLEN);
 		memset(command, (char)0, BUFLEN);
@@ -320,7 +326,7 @@ void do_Prompt() {
 				strcpy(argv[argc++], ptr);
 				ptr = strtok(NULL, " ");
 			}
-			if (argc < 2) {
+			if (argc < 2 || strcmp(argv[0], "delete")) {
 				fprintf(stderr, "usage : DELETE [FILENAME] [END_TIME] [OPTION]\n");
 				continue;
 			}
@@ -332,7 +338,7 @@ void do_Prompt() {
                 strcpy(argv[argc++], ptr);
                 ptr = strtok(NULL, " ");
             }
-            if (argc < 2) {
+            if (argc < 2 || strcmp(argv[0], "size")) {
                 fprintf(stderr, "usage : SIZE [FILENAME] [OPTION]\n");
                 continue;
             }
@@ -344,7 +350,7 @@ void do_Prompt() {
 				strcpy(argv[argc++], ptr);
 				ptr = strtok(NULL, " ");
 			}
-			if (argc < 2) {
+			if (argc < 2 || strcmp(argv[0], "recover")) {
 				fprintf(stderr, "usage : RECOVER [FILENAME] [OPTION]\n");
 				continue;
 			}
@@ -354,6 +360,7 @@ void do_Prompt() {
 			doTree();
 		}
 		else {
+
 			doHelp();
 		}
 	}
@@ -638,7 +645,8 @@ void doDelete(int argc, char(*argv)[BUFLEN]) {
 	int nums = 0, res;
 	char dupfiles[MAXFILE][BUFLEN];
 	char delimeter[BUFLEN];
-
+    
+    pid_t pid;
 
 	while (1) { //infoDir크기 확인
 		dsize = getDirSize(infoDir);
@@ -702,7 +710,23 @@ void doDelete(int argc, char(*argv)[BUFLEN]) {
 			return;
 		return;
 	}
-	//여기부터는 삭제시간 있는 경우
+ 
+
+    //여기부터는 삭제시간 있는 경우
+
+	//삭제시간 기다리기 - 커널은 대기 불가능하므로 fork()로 자식 프로세스가 대기 후 삭제 수행
+    if ((pid = fork()) < 0 ){
+        fprintf(stderr, "fork error\n");
+        return ;
+    }
+    else if (pid == 0) { //자식프로세스는 doPrompt를 수행하려 간다
+        return;
+    }
+
+
+    else if (pid > 0) { //부모프로세스인 경우 삭제시간을 기다린 후 수행
+
+
 	strcpy(deldate, rtrim(argv[2]));
 	strcpy(deltime, rtrim(argv[3]));
 
@@ -724,9 +748,7 @@ void doDelete(int argc, char(*argv)[BUFLEN]) {
 			iOption = true;
 	}
 
-
-	//삭제시간 기다리기
-	while (1) {
+    while(1) {
 		nowt = time(NULL);
 		tm = *localtime(&nowt);
 		sprintf(curdate, "%d-%02d-%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
@@ -734,7 +756,9 @@ void doDelete(int argc, char(*argv)[BUFLEN]) {
 		//printf("curtime : %s\n",curtime);
 		//printf("deltime : %s\n",deltime);
 		if (!strcmp(curdate, deldate) && !strcmp(curtime, deltime)) {
-			if (rOption) {
+			//삭제시간이 된 경우, doPrompt 실행중인 자식프로세스를 죽이고 파일 삭제를 진행
+            kill(pid, SIGKILL);
+            if (rOption) {
 				printf("Delete [y/n]? ");
 				scanf(" %c", &answer);
 				getchar();
@@ -765,18 +789,20 @@ void doDelete(int argc, char(*argv)[BUFLEN]) {
             return;
         }
 		remove(fullpath);
-		return;
+        return;
 	}
 	//i옵션 없는경우
 	nowt = time(NULL);
 	tm = *localtime(&nowt); //삭제시간 저장    
 	if (makeInfo(fname, fullpath, tm) < 0) //infoDir에 삭제할 파일정보 저장
-		return;
+        return;
 
 	if (intoTrash(fname, fullpath) < 0) //삭제파일 filesDir로 이동!(rename)
-		return;
-
+        return;
+    
+    
 	return;
+    } 
 }
 
 int get_path(char *path, char *fname, char *pathname) {
