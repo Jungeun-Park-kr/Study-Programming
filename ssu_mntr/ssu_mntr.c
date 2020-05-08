@@ -26,6 +26,12 @@ char filesDir[BUFLEN];
 char infoDir[BUFLEN];
 char workDir[BUFLEN];
 
+struct oldFileList {
+    char fname[BUFLEN];
+    char dtime[BUFLEN];
+};
+typedef struct oldFileList oldFileList;
+
 void ssu_mntr() {
 	pid_t dmpid;
 	FILE *logfp;
@@ -946,6 +952,7 @@ int do_dOption(char *printpath,char *statpath, int depth, int curdepth) {
 
 }
 
+
 void doSize(int argc, char (*argv)[BUFLEN]) {
     char fname[BUFLEN], pathname[BUFLEN], path[BUFLEN] = ".";
     char *ptr;
@@ -969,10 +976,8 @@ void doSize(int argc, char (*argv)[BUFLEN]) {
    
     isExist(workDir, fname, pathname); //일반파일일 경우 전체 경로를 알아오기 위해 호출
 
-    if ((stat(pathname, &statbuf)) < 0) { //stat()으로 파일 정보 가져옴
-        fprintf(stderr, "stat error\n");
-        return;
-    }
+    stat(pathname, &statbuf);  //stat()으로 파일 정보 가져옴 (stat실패해도 아래에서 한번 더 검사함. isExist로 가져온 pathname으로는 일반파일밖에 확인못하기 때문)
+    
     if ((statbuf.st_mode & S_IFMT) == S_IFREG) { //일반파일인 경우,
         if (get_path(path, fname, pathname) == 0) { //상대경로 가져오기
             fprintf(stderr, "get_path error\n");
@@ -1191,6 +1196,82 @@ int intoCheck(char *fname, char *pathname) {
 	return true;
 }
 
+int get_old_files(oldFileList lists[BUFLEN]) {
+    FILE *fp;
+    int i, cnt, j = 0, k;
+    struct dirent **flist;
+    char fname[BUFLEN], fpath[BUFLEN], dupfiles[BUFLEN][BUFLEN];
+    int dupn;
+    char buf[BUFLEN];
+
+    if ((cnt = scandir(infoDir, &flist, except_tmp_file, alphasort)) == -1) {
+        fprintf(stderr, "scandir error\n");
+        return false;
+    }
+
+    for (i = 0; i < cnt; i++) {
+        dupn = 0;
+        strcpy(fname, flist[i]->d_name);
+        sprintf(fpath, "%s/%s", infoDir, fname);
+        
+        isDup(filesDir, fname, &dupn, dupfiles);  //filesDir에 해당 이름 가진 파일이 여러개 있는지 확인`
+
+        if ((fp = fopen(fpath, "r")) == NULL) {
+            fprintf(stderr, "fopen error for %s\n", fpath);
+            return false;
+        }
+        fgets(buf, BUFLEN, fp); //[Trash info]부분 필요x
+        if(dupn == 1) { //중복파일이 없는경우 (하나만 존재)
+            //printf("중복없음\n");
+            strcpy(lists[j].fname, fname);
+            fgets(buf, BUFLEN, fp); //경로부분 필요x
+            fgets(buf, BUFLEN, fp); //dtime 필요O
+            strcpy(lists[j++].dtime, buf);
+            fclose(fp);
+        }
+        else { //여러개인 경우
+            for (k=0; k < dupn; k++) { //중복이 있는 경우 여러개의 시간을 다 저장
+                strcpy(lists[j].fname, fname);
+                fgets(buf, BUFLEN, fp); //경로 필요x
+                fgets(buf, BUFLEN, fp); //dtime 저장해야함
+                strcpy(lists[j++].dtime, buf);
+                fgets(buf, BUFLEN, fp); //mtime 필요x
+            }
+            fclose(fp);
+        }
+    }
+    return j;
+}
+
+void sort_old_files(oldFileList lists[BUFLEN], int cnt) {
+    int i, j;
+    oldFileList tmp;
+
+    //인덱스 0번부터 오래된 파일이 정렬되도록 함
+    for(i = 0; i < cnt-1; i++) {
+        for (j = 0; j < cnt-i-1; j++) {
+            if (strcmp(lists[j].dtime, lists[j+1].dtime) > 1) {//삭제시간이 최근인게 더 앞에 있는경우 -> swap해서 오래된 순으로 되도록 함
+                tmp = lists[j];
+                lists[j] = lists[j+1];
+                lists[j+1] = tmp;
+            }
+        }
+    }
+
+}
+
+void do_lOption() {
+    oldFileList lists[BUFLEN];
+    int i, cnt;
+
+    cnt = get_old_files(lists);
+    sort_old_files(lists, cnt);
+    for (i = 0; i < cnt; i++) {
+        printf("%d %s\t\t\t%s\n", i+1, lists[i].fname, lists[i].dtime);
+    }
+
+    return;
+}
 
 void doRecover(int argc, char(*argv)[BUFLEN]) {
 	char fname[BUFLEN], pathname[BUFLEN];
@@ -1200,7 +1281,7 @@ void doRecover(int argc, char(*argv)[BUFLEN]) {
 	char dupfiles[MAXFILE][BUFLEN];
 	char mvfname[BUFLEN], orgfname[BUFLEN];
 
-	sprintf(fname, rtrim(argv[1]));
+	strcpy(fname, rtrim(argv[1]));
 	if (argc == 3)
 		if (strstr(argv[2], "-l"))
 			lOption = true;
@@ -1209,6 +1290,11 @@ void doRecover(int argc, char(*argv)[BUFLEN]) {
 		fprintf(stderr, "There is no '%s' in the 'trash' directory\n", fname);
 		return;
 	}
+    
+    if (lOption) { //RECOVER 명령어 실행 전, -l옵션 사용되었으면 먼저 실행
+        do_lOption();
+    }
+
 
 	if (isDup(filesDir, fname, &dupn, dupfiles) < 0) {
         //중복파일이 존재하는 경우 개수 dupn에 저장, 해당 파일의 이름들 dupfiles에 저장
@@ -1233,8 +1319,7 @@ void doRecover(int argc, char(*argv)[BUFLEN]) {
 	}
 	else {
 		//복구할 디렉토리(check)에 같은 파일 없는경우 
-		//같은 파일 없어도 복수파일로 인해 딜리미터가 붙은 이름인경우 => 해야함
-        if (isExist(filesDir, fname, orgfname)) { 
+        if (isExist(filesDir, fname, orgfname)) { //같은 파일 없어도 복수파일로 인해 딜리미터가 붙은 이름인경우
             strcpy(pathname, orgfname);
         }
 
@@ -1438,9 +1523,10 @@ void doTree() {
 	char ftype[BUFLEN];
 	int fdep[BUFLEN];
 	int fsize = 0;
-	int depth = 0, d = 0;
+	int depth = 0;
+	int i;
 
-	int i, fcnt = 0;
+    //tree를 그리기 위한 파일정보를 저장할 배열들 초기화
 	for (i = 0; i < BUFLEN; i++) {
 		memset(fname[i], (char)0, BUFLEN);
 	}
@@ -1448,40 +1534,8 @@ void doTree() {
 	memset(ftype, (char)0, BUFLEN);
 	memset(fdep, 0, BUFLEN);
 
-	fsize = makeTree(d, checkDir, fname, ftype, fdep, 0);
-	printTree(fsize, fname, ftype, fdep, 0);
-
-
-
-/*
-	for (i = 0; i < fsize; i++) {
-		printf("fdep[%d]:%d\n", i, fdep[i]);
-		if (fdep[i] > depth)
-			depth = fdep[i];
-	}
-
-	
-	 printf("\nfsize : %d, depth : %d\n", fsize, depth);
-	 for (i=0; i<fsize; i++) {
-		 printf("[%d][%c]fname = %s\n", fdep[i],ftype[i], fname[i]);
-	 }*/
-
-
-
-	 //fsize = fsize - (depth*2); //실제 총 파일 개수
-	 /*
-	 for(i = 0; i < fsize; i++) {
-		 if(ftype[i] == 'c')
-			 continue;
-		 else if(ftype[i] == 'p')
-			 continue;
-		 else if(ftype[i] == 'r')
-			 continue;
-		 else
-			 printf("%s\n", fname[i]);
-	 }
-	 */
-	 //printTree(depth, checkDir, fname, ftype);
+	fsize = makeTree(0, checkDir, fname, ftype, fdep, 0); //tree출력하기 위한 파일 정보들 저장, 총 파일의 개수 리턴
+	printTree(fsize, fname, ftype, fdep, 0); //파일들을 트리 구조로 출력
 	return;
 }
 
