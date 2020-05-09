@@ -1070,29 +1070,6 @@ int printDup(int num, char *fname, char(*dupFiles)[BUFLEN]) {
 
 	return choice;
 }
-/*
-int get_info_num(char *fname) {
-    char path[BUFLEN], buf[BUFLEN];
-    FILE *fp;
-    int cnt = 0;
-
-    sprintf(path, "%s/%s", infoDir, fname);
-    
-    if ((fp = fopen(fname, "r")) == NULL) {
-        fprintf(stderr, "fopen error for %s\n", fname);
-        return false;
-    }
-    
-    fgets(buf, BUFLEN, fp); //[trashinfo] skip
-    while (feof(fp) != NULL) {
-        fgets(buf, BUFLEN, fp);
-        fgets(buf, BUFLEN, fp);
-        fgets(buf, BUFLEN, fp);
-        cnt++;
-    }
-
-    return cnt;
-}*/
 
 int get_recover_file(char *recoverfile, char *recoverpath, int isDup, int choice, int nums) {
 	//파라미터 : recoverfile : 복구할 files내의 파일이름(사용자가 선택, 혹은 유일한 것)
