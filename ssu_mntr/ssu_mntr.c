@@ -296,12 +296,13 @@ void do_Prompt(int pid) {
 	char command[BUFLEN];
 	char tmp[BUFLEN];
 	char argv[COMMAND_ARGC][BUFLEN];
-	int argc, i, cnt = 0;
+	int argc, i, cnt = 0, delp = false;
 	char c;
 	char *ptr;
-	int curpid, tmpid;
+	int curpid, tmpid, childpid;
+    int rOption = false;
 	while (1) {
-
+		
         tmpid = getpid();
 		argc = cnt = 0;
 		memset(tmp, (char)0, BUFLEN);
@@ -309,10 +310,14 @@ void do_Prompt(int pid) {
 		for (i = 0; i < COMMAND_ARGC; i++) {
 			memset(argv[i], (char)0, BUFLEN);
 		}
-		printf("20180753>");
+		if (delp&&rOption==false) //이미 자식프로세스가 프롬프트 출력한 경우 부모는 생략
+			delp = false;
+		else
+			printf("20180753>");
 		fgets(command, BUFLEN, stdin);
-		if (!strcmp(command, "\n"))
+		if (!strcmp(command, "\n")) //개행문자만 입력받을경우, 프롬프트 재출력
 			continue;
+
 		if (strstr(command, "exit") != NULL) { //exit명령어 사용시 종료
 			if (curpid == 0 && pid != tmpid) { //아직 파일 삭제 대기중일 때 exit명령어 사용되는 경우
                 kill(pid, SIGKILL); //삭제 대기중인 부모 프로세스를 죽임 
@@ -322,6 +327,9 @@ void do_Prompt(int pid) {
 				break;
 		}
 		else if (strstr(command, "delete") != NULL) { //detete
+			rOption = false;
+			if(strstr(command, "-r"))
+				rOption = true;
 			ptr = strtok(command, " ");
 			while (ptr != NULL) {
 				strcpy(argv[argc++], ptr);
@@ -332,8 +340,13 @@ void do_Prompt(int pid) {
 				continue;
 			}
 			curpid = doDelete(argc, argv); //자식이 리턴하면 pid2 = 0, 부모가 성공리턴이면 >0
+			if (curpid == 0 && getpid() != 0) 
+				childpid = getpid();
+			else if (curpid > 0)  //부모 수행 완료 후, 자식 프로세스 죽임
+				delp = true;
+
 		}
-		else if (strstr(command, "size") != NULL) {
+		else if (strstr(command, "size") != NULL) { //SIZE 명령어
 			ptr = strtok(command, " ");
 			while (ptr != NULL) {
 				strcpy(argv[argc++], ptr);
@@ -357,10 +370,10 @@ void do_Prompt(int pid) {
 			}
 			doRecover(argc, argv);
 		}
-		else if (strstr(command, "tree") != NULL) {
+		else if (strstr(command, "tree") != NULL) { //TREE
 			doTree();
 		}
-		else {
+		else { //그 외 명령어 모두 Help 수행
 
 			doHelp();
 		}
@@ -487,7 +500,6 @@ void removeOldFile() {
 	if (dupn == 1) { //파일이 하나 뿐인경우
 		get_path(filesDir, oldname, oldpath); //삭제할 files디렉토리의 원본파일 이름 가져오기
 		
-        printf("삭제할 이름 : %s\n경로 : %s\n", oldname, oldpath);
         if (stat(oldpath, &statbuf) < 0) {
             fprintf(stderr, "stat error\n");
             return;
@@ -660,7 +672,7 @@ int doDelete(int argc, char(*argv)[BUFLEN]) {
 	time_t nowt;
 	struct tm tm;
 
-	char fname[BUFLEN], tmpbuf[BUFLEN];
+	char fname[BUFLEN], tmpbuf[BUFLEN], delt[BUFLEN];
 	char deldate[BUFLEN], deltime[BUFLEN], curdate[BUFLEN], curtime[BUFLEN];
 	char fullpath[BUFLEN], filespath[BUFLEN];
 	char newname[BUFLEN];
@@ -773,14 +785,15 @@ int doDelete(int argc, char(*argv)[BUFLEN]) {
 
 		strcpy(deldate, rtrim(argv[2]));
 		strcpy(deltime, rtrim(argv[3]));
-
+		sprintf(delt, "D : %s %s", deldate, deltime);
 		//입력받은 삭제시간이 현재보다 이전인 경우 -> 에러처리
 		nowt = time(NULL);
 		tm = *localtime(&nowt);
-		sprintf(curdate, "%d-%02d-%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
-		sprintf(curtime, "%02d:%02d", tm.tm_hour, tm.tm_min);
-		if ((strcmp(curdate, deldate) == 1 || strcmp(curtime, deltime) == 1)) {
+		//sprintf(curdate, "%d-%02d-%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
+		sprintf(curtime, "D : %d-%02d-%01d %02d:%02d", tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday, tm.tm_hour, tm.tm_min);
+		if (compareTime(curtime, delt)) { 
 			fprintf(stderr, "delete time not be past!\n");
+			getchar();
 			return false;
 		}
 
@@ -803,15 +816,17 @@ int doDelete(int argc, char(*argv)[BUFLEN]) {
 					else if (answer == 'n')
 						return true; //삭제하지 않고 종료 
 				}
-				isdel = true;
-				break;
+				else {
+					isdel = true;
+					break;
+				}
 			}
 			if (isdel)
 				break;
 		}
 
-
-		//삭제시간 된 경우
+			
+		//r옵션 없이 삭제시간 된 경우
 		if (iOption) { //-i옵션 사용된 경우
 			//삭제할 파일이 디렉토리인경우 에러처리
 			if ((stat(fullpath, &statbuf)) < 0) {
@@ -823,7 +838,7 @@ int doDelete(int argc, char(*argv)[BUFLEN]) {
 				return false;
 			}
 			remove(fullpath);
-			return true;
+			return true; 
 		}
 		//i옵션 없는경우
 		nowt = time(NULL);
@@ -833,7 +848,6 @@ int doDelete(int argc, char(*argv)[BUFLEN]) {
 			return false;
 		if (intoTrash(fname, fullpath) < 0) //삭제파일 filesDir로 이동!(rename)
 			return false;
-
 		return true;
 	}
 }
@@ -1237,7 +1251,7 @@ int get_old_files(oldFileList lists[BUFLEN]) {
 }
 
 
-int compareTime(char *tm1, char *tm2) { //문자열로 된 시간 두개를 비교하여 tm1이 오래된 경우 true(1)을 리턴, tm2가 더 오래된 경우 false(0)을 리턴
+int compareTime(char *tm1, char *tm2) { //문자열로 된 시간 두개를 비교하여 tm1이 더 최근인 경우 true(1)을 리턴, tm2가 더 최근인 경우 false(0)을 리턴
 	char t1[BUFLEN], t2[BUFLEN];
 	char buf[BUFLEN], date1[BUFLEN], time1[BUFLEN], date2[BUFLEN], time2[BUFLEN];
 	char c1, c2;
