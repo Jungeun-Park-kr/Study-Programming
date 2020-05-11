@@ -302,7 +302,6 @@ void do_Prompt(int pid) {
 	int curpid, tmpid;
 	while (1) {
 
-		//자식 프로세스가 수행한 경우 종료시킴
         tmpid = getpid();
 		argc = cnt = 0;
 		memset(tmp, (char)0, BUFLEN);
@@ -312,7 +311,8 @@ void do_Prompt(int pid) {
 		}
 		printf("20180753>");
 		fgets(command, BUFLEN, stdin);
-
+		if (!strcmp(command, "\n"))
+			continue;
 		if (strstr(command, "exit") != NULL) { //exit명령어 사용시 종료
 			if (curpid == 0 && pid != tmpid) { //아직 파일 삭제 대기중일 때 exit명령어 사용되는 경우
                 kill(pid, SIGKILL); //삭제 대기중인 부모 프로세스를 죽임 
