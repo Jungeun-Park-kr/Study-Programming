@@ -310,7 +310,7 @@ void do_Prompt(int pid) {
 		for (i = 0; i < COMMAND_ARGC; i++) {
 			memset(argv[i], (char)0, BUFLEN);
 		}
-		if (delp&&rOption==false) //이미 자식프로세스가 프롬프트 출력한 경우 부모는 생략
+		if (delp && rOption==false) //이미 자식프로세스가 프롬프트 출력한 경우 부모는 생략
 			delp = false;
 		else
 			printf("20180753>");
@@ -342,9 +342,8 @@ void do_Prompt(int pid) {
 			curpid = doDelete(argc, argv); //자식이 리턴하면 pid2 = 0, 부모가 성공리턴이면 >0
 			if (curpid == 0 && getpid() != 0) 
 				childpid = getpid();
-			else if (curpid > 0)  //부모 수행 완료 후, 자식 프로세스 죽임
+			else if (argc > 2 && curpid > 0)  //부모 수행 완료 후, 자식 프로세스 죽임
 				delp = true;
-
 		}
 		else if (strstr(command, "size") != NULL) { //SIZE 명령어
 			ptr = strtok(command, " ");
@@ -397,13 +396,21 @@ char *rtrim(char *str) {
 
 char *rmvpath(char *str) { //앞의 경로는 제외하고 이름만 뽑아내는 함수
 	char *start;
+	char tmp[BUFLEN];
 
-	start = str + strlen(str) - 1;
-	while (*start != '/')
+	memset(tmp, (char)0, BUFLEN);
+	strcpy(tmp, str);
+	
+	start = tmp + strlen(tmp) -1;
+	while (*start != '/') {
 		--start;
-	str = start + 1;
-
-	return str;
+	}
+	if (start == str)
+		return str;
+	else {
+		str = start + 1;
+		return str;
+	}
 }
 
 
@@ -701,22 +708,20 @@ int doDelete(int argc, char(*argv)[BUFLEN]) {
 		return false;
 	}
 
-	if (!isExist(checkDir, fname, fullpath)) { //상대경로(파일이름)로 파일 존재 확인
-		if (get_path(checkDir, fname, fullpath) == 0) { //파일이름으로 디렉토리 존재 확인
-			strcpy(tmpbuf, rmvpath(fname));
-			if (!isExist(checkDir, tmpbuf, fullpath)) { //절대경로로 파일 존재 확인
-				if (get_path(checkDir, tmpbuf, fullpath) == 0) { //절대경로로 파일아닌 디렉토리도 확인
-					fprintf(stderr, "%s file don't exist!\n", fname); //그래도 없으면 메시지 출력 후 종료
-					return false;
-				}
-			}
 
+	if (!isExist(checkDir, fname, fullpath)) { //상대경로(파일이름)로 파일 존재 확인
+		if (!get_path(checkDir, fname, fullpath)) { //파일이름으로 디렉토리 존재 확인
+			memset(tmpbuf, (char)0, BUFLEN);
+			strcpy(tmpbuf, rmvpath(fname));
+			if (!get_path(checkDir, tmpbuf, fullpath)) { //절대경로로 파일 존재 확인
+				fprintf(stderr, "%s file don't exist!\n", fname); //그래도 없으면 메시지 출력 후 종료
+				return false;
+			}
 			else { //절대경로이면 파일 이름만 fname에 저장
 				strcpy(fname, tmpbuf);
 			}
 		}
 	}
-
 	for (i = 0; i < argc; i++) { //옵션저장
 		if ((ptr = strstr(argv[i], "-r")) != NULL)
 			rOption = true;
@@ -960,7 +965,7 @@ void doSize(int argc, char(*argv)[BUFLEN]) {
 
 	strcpy(fname, rtrim(argv[1]));
 
-	if (argc == 4) { //옵션 저장
+	if (argc > 3) { //옵션 저장
 		if ((ptr = strstr(argv[2], "-d")) != NULL) //-d옵션 사용되었으면 dOption true로!
 			dOption = true;
 		else {
@@ -976,7 +981,7 @@ void doSize(int argc, char(*argv)[BUFLEN]) {
 
 	stat(pathname, &statbuf);  //stat()으로 파일 정보 가져옴 (stat실패해도 아래에서 한번 더 검사함. isExist로 가져온 pathname으로는 일반파일밖에 확인못하기 때문)
 
-	if ((statbuf.st_mode & S_IFMT) == S_IFREG) { //일반파일인 경우,
+	if (dOption == false && (statbuf.st_mode & S_IFMT) == S_IFREG) { //d옵션 사용 안되고, 일반파일인 경우,
 		if (get_path(path, fname, pathname) == 0) { //상대경로 가져오기
 			fprintf(stderr, "get_path error\n");
 			return;
@@ -1334,7 +1339,7 @@ void do_lOption() {
 	for (i = 0; i < cnt; i++) { //오래된 순으로 출력
 		printf("%d %s\t\t\t%s\n", i + 1, lists[i].fname, lists[i].dtime);
 	}
-	printf("\n");
+	//printf("\n");
 	return;
 }
 
