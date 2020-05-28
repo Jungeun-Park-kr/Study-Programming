@@ -525,20 +525,77 @@ char *rmvpath(char *str) { //앞의 경로는 제외하고 이름만 뽑아내�
 }
 
 static void cancel_sync_handler(int signo) {
-	if (is_changed == FALSE) { //아직 변경 안되었으므로 바로 종료
-		exit(0);	
+	struct stat statbuf;
+	int isDir = FALSE;
+	char cpcommand[BUFLEN];
+
+	if (stat(srcPath, &statbuf) < 0) { //src파일 정보 가져오기
+		fprintf(stderr, "stat error for %s\n", srcPath);
+		exit(1);
 	}
-	if (is_started || is_finished) { //이미 시작되었으면
-		//dst 파일 동기화 전으로 되돌림
-		//in here
-		if (is_logchanged) { //로그 파일도 변경 된 경우
-			exit(0);
+	if ((statbuf.st_mode & S_IFMT) == S_IFDIR) {
+		isDir = TRUE;
+	}
+	if (is_changed == TRUE) { //파일 변경이 시작된 경우
+		if (is_started || is_finished) { //이미 시작되었으면 파일 동기화 전으로 되돌림
+			if (isDir) //SRC가 디렉토리인 경우
+				if (!rmvDir(srcPath)) { //src내의 내용 삭제
+					fprintf(stderr, "rmvDir error for %s\n", srcPath);
+					return FALSE;
+				}
+			if (remove(srcPath) < 0) { //src파일 자체 삭제
+					fprintf(stderr, "remove error for %s\n", srcPath);
+					return FALSE;
+			}
+			sprintf(cpcommand, "cp -r -p %s %s", srcBackup, srcPath); //src 파일 되돌리기
+			system(cpcommand);
+
+			if (!rmvDir(dstPath)) { //dst 내의 내용 삭제
+				fprintf(stderr, "rmvDir error for %s\n", dstBackup);
+				return FALSE;
+			}
+			if (remove(dstPath) < 0) { //dst파일 자체 삭제
+				fprintf(stderr, "remove error for %s\n", dstBackup);
+				return FALSE;
+			}
+			sprintf(cpcommand, "cp -r -p %s %s", dstBackup, dstPath); //dst 파일 되돌리기
+			system(cpcommand);
+
+			if (!is_logchanged) { //로그 파일도 변경 된 경우
+				//로그 파일도 동기화 전으로 되돌림
+				if (remove(logFile) < 0) { //로그파일 삭제
+					fprintf(stderr, "remove error for %s\n", srcBackup);
+					return FALSE;
+				}
+				sprintf(cpcommand, "cp -r -p %s %s", logBackup, logFile); //로그 파일 되돌리기
+				system(cpcommand);
+			}
 		}
-		//로그 파일도 동기화 전으로 되돌림
-		//in here
-		
-		exit(0);
 	}
+	 //파일 되돌리기 했거나  // 아직 변경 안된 경우 => 백업 파일 삭제 후 종료
+	if (isDir) //SRC가 디렉토리인 경우
+		if (!rmvDir(srcBackup)) { //src백업 내의 내용 삭제
+			fprintf(stderr, "rmvDir error for %s\n", srcBackup);
+			return FALSE;
+		}
+	if (remove(srcBackup) < 0) { //백업src파일 자체 삭제
+			fprintf(stderr, "remove error for %s\n", srcBackup);
+			return FALSE;
+	}	
+	if (remove(logBackup) < 0) { //백업로그파일 삭제
+		fprintf(stderr, "remove error for %s\n", srcBackup);
+		return FALSE;
+	}
+	if (!rmvDir(dstBackup)) { //dst백업 내의 내용 삭제
+		fprintf(stderr, "rmvDir error for %s\n", dstBackup);
+		return FALSE;
+	}
+	if (remove(dstBackup) < 0) { //dst파일 자체 삭제
+		fprintf(stderr, "remove error for %s\n", dstBackup);
+		return FALSE;
+	}
+	exit(0);	
+	
 }
 
 void printUsage() {
