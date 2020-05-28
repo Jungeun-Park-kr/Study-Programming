@@ -28,6 +28,10 @@ int is_started = FALSE;
 int is_finished = FALSE;
 int is_logchanged = FALSE;
 
+int rOption = FALSE;
+int mOption = FALSE;
+int tOption = FALSE;
+
 char srcName[BUFLEN];
 char srcPath[BUFLEN];
 char srcBackup[BUFLEN];
@@ -88,18 +92,22 @@ void ssu_rsync(int argc, char *argv[]) {
 	//파일의 존재여부와 접근권한 확인
 	if (access(srcPath, F_OK)) { //src파일 존재 확인
 		fprintf(stderr, "<%s> file don't exist!\n", srcPath);
+		void printUsage();
 		exit(1);
 	}
 	if (access(srcPath, R_OK) || access(srcPath, W_OK)) { //src파일 접근권한
 		fprintf(stderr, "you don't have permission of <%s> file\n", srcPath);
+		void printUsage();
 		exit(1);
 	}
 	if (access(dstPath, F_OK)) { //dst 파일 존재 확인
 		fprintf(stderr, "<%s> file don't exist!\n", dstPath);
+		void printUsage();
 		exit(1);
 	}
 	if (access(dstPath, R_OK) || access(dstPath, W_OK)) { //dst파일 접근권한 확인
 		fprintf(stderr, "you don't have permission of <%s> file\n", dstPath);
+		void printUsage();
 		exit(1);
 	}
 	//dst는 디렉토리인지 확인 필요
@@ -110,6 +118,7 @@ void ssu_rsync(int argc, char *argv[]) {
 	//dst 디렉토리 아니면 에러처리 후 종료
 	if (!S_ISDIR(statbuf.st_mode)) { //statbuf.st_mode & S_IFMT) ==  S_IFDIR
 		fprintf(stderr, "<%s> file is NOT Directory file\n", dstPath);
+		void printUsage();
 		exit(1);
 	}	
 	
@@ -130,14 +139,33 @@ void ssu_rsync(int argc, char *argv[]) {
 	// 	exit(1);
 	// }
 	
-	
+	if (!checkOption(argc, argv)) //옵션 체크
+		exit(1);
+
 	if (!doSync()) {
 		fprintf(stderr, "doSync error\n");
 		exit(1);
 	}
 			
 }
+int checkOption(int argc, char *argv[]) {
+	int i, j;
+	int c;
 
+	while ((c = getopt(argc, argv, "rmt")) != -1) {
+		switch(c) {
+			case 'r' :
+				rOption = TRUE;
+				break;
+			case 'm' :
+				mOption = TRUE;
+				break;
+			case 't' :
+				tOption = TRUE;
+				break;
+		}
+	}
+}
 int doSync() {
 	struct stat statbuf;
 	int fd;
@@ -265,6 +293,11 @@ int compareFile(int isDir, char *file1, char *file2) {
 int syncDir() { //디렉토리 파일을 동기화
 	is_changed = TRUE;
 	is_started = TRUE;
+
+
+
+	is_finished = TRUE;
+	return TRUE;
 }
 
 int syncFile() { //일반 파일을 동기화
@@ -321,11 +354,13 @@ int syncFile() { //일반 파일을 동기화
 		//src와 dst의 파일이 다른지 비교
 		int res = compareFile(FALSE, srcPath, pathbuf);
 		if (!res) { //같은 경우 -> 동기화 필요 x
+			is_finished = TRUE; //동기화 완료(필요 없는 동기화)
 			printf("동기화 필요 없음\n");
 			time(&cur_time);
 			ctime_r(&cur_time, timebuf);
 			timebuf[19] = 0; //요일 월 일 시간 까지만 출력할것임
 			sprintf(filebuf, "[%s] %s\n", timebuf, usrCommand);
+			
 		}
 		else { //파일이 달라서 동기화 하는 경우
 			printf("동기화 필요함\n");
@@ -337,6 +372,8 @@ int syncFile() { //일반 파일을 동기화
 				fprintf(stderr, "link error for %s\n", srcPath);
 				return FALSE;
 			}
+			is_finished = TRUE; //동기화 완료
+			
 			//로그에 작성할 내용 저장
 			time(&cur_time);
 			ctime_r(&cur_time, timebuf);
@@ -344,7 +381,7 @@ int syncFile() { //일반 파일을 동기화
 			sprintf(filebuf, "[%s] %s\n\t%s %ldbytes\n", timebuf, usrCommand, srcName, statbuf.st_size);	
 		}
 	}
-	
+	is_logchanged = TRUE;
 	if ((fp = fopen(logFile, "a")) == NULL) {
 		fprintf(stderr, "fopen error for %s\n", logFile);
 		return FALSE;
@@ -364,6 +401,7 @@ int syncFile() { //일반 파일을 동기화
 		fprintf(stderr, "remove error for %s\n", srcBackup);
 		return FALSE;
 	}
+	
 	return TRUE;
 }
 
@@ -449,6 +487,14 @@ static void cancel_sync_handler(int signo) {
 		
 		exit(0);
 	}
+}
+
+void printUsage() {
+	printf("Uage : ssu_rsync [OPTION] <SRC> <DST>\n");
+	printf("Option : \n");
+	printf(" -r 		SRC가 디렉토리인 경우 서브 디렉토리 내의 파일도 함께 동기화\n");
+	printf(" -t			필요한 대상들을 묶어 한번에 동기화 작업 수행\n");
+	printf(" -m			DST 디렉토리에 SRC파일(또는 디렉토리)이 없는 경우 해당 파일을 DST내에서 삭제\n");
 }
 int main(int argc, char *argv[]) {
 	
