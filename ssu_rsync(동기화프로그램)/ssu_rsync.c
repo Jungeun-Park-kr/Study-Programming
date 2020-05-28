@@ -60,7 +60,7 @@ char *rtrim(char *str) { //문자열의 우측에 존재하는 공백을 제거 
 
 void ssu_rsync(int argc, char *argv[]) {
 	char saved_path[BUFLEN];
-
+	char cpcommand[BUFLEN];
 	struct stat statbuf;
 
 	//SIGINT시그널을 등록, cancel_sync_handler()함수 핸들러 등록
@@ -125,20 +125,16 @@ void ssu_rsync(int argc, char *argv[]) {
 	sprintf(srcBackup, "%s_backup", srcPath); //백업용 src 이름 저장
 	sprintf(dstBackup, "%s_backup", dstPath); //백업용 dst 이름 저장
 	sprintf(logBackup, "%s_backup", logFile);
-	if (link(srcPath, srcBackup) == -1) { //src 백업파일 생성
-		fprintf(stderr, "link error for %s\n", srcPath);
-		exit(1);
-	}
-	if (link(logFile, logBackup) == -1) { //log 백업파일 생성
-		fprintf(stderr, "link error for %s\n", logFile);
-		exit(1);
-	}
-	// if (link(dstPath, dstBackup) == -1) { //dst 백업파일 생성
-	// 	printf("dst파일 동기화 실패\n");
-	// 	fprintf(stderr, "link error for %s\n", dstPath);
-	// 	exit(1);
-	// }
+
+	sprintf(cpcommand, "cp -p -r %s %s", srcPath, srcBackup);
+	system(cpcommand);
+	sprintf(cpcommand, "cp -p -r %s %s", logFile, logBackup);
+	system(cpcommand);
+	sprintf(cpcommand, "cp -p -r %s %s", dstPath, dstBackup);
+	system(cpcommand);
 	
+	compareFile(0, argv[1], argv[2]);
+	exit(0);
 	if (!checkOption(argc, argv)) //옵션 체크
 		exit(1);
 
@@ -245,6 +241,39 @@ long getDirSize(char *dirName) {
 	return dsize; //총 디렉토리의 사이즈 리턴
 }
 
+int rmvDir(char *dirname) {
+	//파라미터로 입력받은 디렉토리 내의 모든 파일을 삭제하는 함수
+	int cnt, i;
+	struct dirent **flist;
+	char buf[BUFLEN], fname[BUFLEN];
+	struct stat statbuf;
+
+	if ((cnt = scandir(dirname, &flist, NULL, alphasort)) == -1) { //모든 파일 정보 가져옴
+		fprintf(stderr, "scandir error\n");
+		return FALSE;
+	}
+	for (i = 0; i < cnt; i++) {
+		strcpy(fname, flist[i]->d_name);
+
+		if (!strcmp(fname, ".") || !strcmp(fname, "..")) //무시
+			continue;
+		sprintf(buf, "%s/%s", dirname, fname); 
+		if (stat(buf, &statbuf) < 0) {
+			fprintf(stderr, "stat error\n");
+			return FALSE;
+		}
+
+		if ((statbuf.st_mode & S_IFMT) == S_IFREG) { //일반파일인 경우
+			remove(buf); //바로파일삭제
+		}
+		else if ((statbuf.st_mode & S_IFMT) == S_IFDIR) {
+			deleteDir(buf); //재귀호출로 해당디렉토리 내의 파일 모두 삭제
+			remove(buf); //그후 빈 디렉토리인 자기자신도 삭제
+		}
+	}
+	return TRUE;
+}
+
 int compareFile(int isDir, char *file1, char *file2) {
 	//두 파일을 비교해서 동일하면 0, 다르면 1 리턴
 	struct stat statbuf1, statbuf2;
@@ -304,6 +333,7 @@ int syncFile() { //일반 파일을 동기화
 	is_changed = TRUE;
 	is_started = TRUE;
 	char pathbuf[BUFLEN], newName[BUFLEN], timebuf[BUFLEN], filebuf[BUFLEN];
+	char cpcommand[BUFLEN];
 	long fsize;
 	FILE *fp;
 	//struct flock lock;
@@ -335,10 +365,14 @@ int syncFile() { //일반 파일을 동기화
 		//dst안에 src 복사(link 이용)
 		printf("없는 파일 동기화\n");
 		sprintf(newName, "%s/%s", dstPath, srcName); //복사 될 이름 (dst아래 src파일이름)
+		/* link() 이용한 것 말고 cp 명령어로 파일 복사 해보려고 주석 처리
 		if (link(srcPath, newName) == -1) { //얘는 없는 파일이니까 새 이름 지정
 			fprintf(stderr, "link error for %s\n", srcPath);
 			return FALSE;
-		}
+		} */
+		sprintf(cpcommand, "cp -r -p %s %s", srcPath, newName);
+		system(cpcommand);
+
 		//로그파일에 쓸 내용 저장
 		time(&cur_time);
 		ctime_r(&cur_time, timebuf);
@@ -368,10 +402,13 @@ int syncFile() { //일반 파일을 동기화
 				fprintf(stderr, "remove error for %s\n", pathbuf);
 				return FALSE;
 			}
+			sprintf(cpcommand, "cp -r -p %s %s", srcPath, pathbuf);
+			system(cpcommand);
+			/* cp명령어로 파일 복사로 변경했음
 			if (link(srcPath, pathbuf) == -1) { //src 파일을 dst에 복사
 				fprintf(stderr, "link error for %s\n", srcPath);
 				return FALSE;
-			}
+			} */
 			is_finished = TRUE; //동기화 완료
 			
 			//로그에 작성할 내용 저장
@@ -382,6 +419,25 @@ int syncFile() { //일반 파일을 동기화
 		}
 	}
 	is_logchanged = TRUE;
+	
+	if (remove(srcBackup) < 0) { //백업src파일 삭제
+		fprintf(stderr, "remove error for %s\n", srcBackup);
+		return FALSE;
+	}
+	if (remove(logBackup) < 0) { //백업로그파일 삭제
+		fprintf(stderr, "remove error for %s\n", srcBackup);
+		return FALSE;
+	}
+	if (!rmvDir(dstBackup)) { //dst백업 내의 내용 삭제
+		fprintf(stderr, "rmvDir error for %s\n", dstBackup);
+		return FALSE;
+	}
+	if (remove(dstBackup) < 0) { //dst파일 자체 삭제
+		fprintf(stderr, "remove error for %s\n", dstBackup);
+		return FALSE;
+	}
+	
+
 	if ((fp = fopen(logFile, "a")) == NULL) {
 		fprintf(stderr, "fopen error for %s\n", logFile);
 		return FALSE;
@@ -393,14 +449,10 @@ int syncFile() { //일반 파일을 동기화
 	fclose(fp);
 	// lock.l_type = F_UNLCK; //동기화 후 락 해제
 	// fcntl(fd1, F_SETLK, &lock);
-	if (remove(srcBackup) < 0) { //백업src파일 삭제
-		fprintf(stderr, "remove error for %s\n", srcBackup);
-		return FALSE;
-	}
-	if (remove(logBackup) < 0) { //백업로그파일 삭제
-		fprintf(stderr, "remove error for %s\n", srcBackup);
-		return FALSE;
-	}
+	
+	
+
+
 	
 	return TRUE;
 }
