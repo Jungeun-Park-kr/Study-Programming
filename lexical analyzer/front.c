@@ -1,4 +1,5 @@
-﻿/* front.c - a lexical analyzer system for simple             arithmetic expressions */
+﻿/* front.c - a lexical analyzer system for simple
+ * arithmetic expressions */
 #include <stdio.h> 
 #include <stdlib.h>
 #include <ctype.h>
@@ -41,7 +42,9 @@ int lex();
 #define RIGHT_BRACE 28 // } 오른 중괄호
 #define LESSER 29 // <
 #define GREATER 30 // >
-#define WHILE_LOOP 40
+#define EQUAL_SIGN 31 // =
+#define WHILE_LOOP 40 // While
+#define SEMICOLON 50 // ;
 
 char WHILE[6] = "while";
 
@@ -50,7 +53,7 @@ char WHILE[6] = "while";
 /* main driver */
 int main() {
 	/* Open the input data file and process its contents */
-	if ((in_fp = fopen("words.txt", "r")) == NULL)
+	if ((in_fp = fopen("test.c", "r")) == NULL)
 		printf("ERROR - cannot open test.c \n");
 	else {
 		getChar();
@@ -105,7 +108,14 @@ int lookup(char ch) {
 		addChar();
 		nextToken = GREATER;
 		break;
-
+	case '=' :
+		addChar();
+		nextToken = EQUAL_SIGN;
+		break;
+	case ';' :
+		addChar();
+		nextToken = SEMICOLON;
+		break;
 	default:
 		addChar();
 		nextToken = EOF;
