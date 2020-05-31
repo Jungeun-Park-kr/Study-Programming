@@ -1,7 +1,3 @@
-/*
- * SIGINT 발생시 복구되는지도 확인해야함!
- * SIGINT 디렉토리인 경우 동기화 이전으로 되돌리기 구현 필요
-*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -192,10 +188,6 @@ int doSync() {
 	}
 	
 	//동기화 하는 파일 못 열게 함
-	// if ((fd = open(srcPath, O_RDWR)) < 0) { //어차피 디렉토리는 open못해..
-	// 	fprintf(stderr, "open error for %s\n", srcPath);
-	// 	return FALSE;
-	// }
 	lock.l_type = F_WRLCK;
 	lock.l_whence = 0;
 	lock.l_start = 0L;
@@ -206,7 +198,6 @@ int doSync() {
 	}
 	//동기화 시작
 	if ((statbuf.st_mode & S_IFMT) == S_IFREG) { //src파일이 일반 파일인 경우
-		printf("일반파일 동기화 시작\n");
 		if (!syncFile()) {
 			fprintf(stderr, "syncFile error\n");
 			//백업파일들 삭제 후 리턴
@@ -233,7 +224,6 @@ int doSync() {
 		
 	}
 	else if ((statbuf.st_mode & S_IFMT) == S_IFDIR) { //src파일이 디렉토리인 경우
-		printf("디렉토리 동기화 시작\n");
 		if (!syncDir()) {
 			fprintf(stderr, "syncDir error\n");
 			//백업파일들 삭제 후 리턴
@@ -410,7 +400,6 @@ int saveDirInfo(char *path, char(*flist)[BUFLEN], int idx) {
 	for (i = idx, j = 0; j < cnt; j++) {
 		if(rOption && i!=j)  {//r옵션 때문에 재귀호출 된 경우, 부모 디렉토리까지 같이 출력
 			sprintf(buf, "%s/%s", path, filelist[j]->d_name);
-			printf("buf : %s\n", buf);
 		}
 		else
 			strcpy(buf, filelist[j]->d_name); //해당 파일 이름을 저장
@@ -433,7 +422,6 @@ int saveDirInfo(char *path, char(*flist)[BUFLEN], int idx) {
 					sprintf(nxtpath, "%s", filelist[j]->d_name);
 				else //재귀호출 된 경우
 					sprintf(nxtpath, "%s/%s", path, filelist[j]->d_name);
-				printf("nxtpath : %s\n",nxtpath);
 				allcnt += saveDirInfo(nxtpath, flist, (idx + allcnt)); //하위 파일 정보도 저장
 				i++;
 			}
@@ -507,7 +495,6 @@ int res;
 			}
 		}
 		if (isfound == FALSE) { //src에 있는데 dst에 없는 건 생성된 것이므로
-			printf("생성됨! - %s\n", srcflist[i]);	
 			sprintf(newName, "%s/%s", dstPath, srcflist[i]); //복사 될 이름 (dst아래 src파일이름)
 			printf("newname:%s\nsrcbuf:%s\n",newName,srcbuf);
 			mySync(newName, srcbuf, FALSE); //dst디렉토리에 새로 생성해줌
@@ -525,7 +512,6 @@ int res;
 			}
 		}
 		else if (ismodified == TRUE) { //파일이 변경된 경우
-			printf("수정됨! - %s\n", srcflist[i]);
 			//기존파일 삭제 후, 동기화 시켜주기
 			mySync(dstbuf, srcbuf, TRUE);
 
@@ -539,7 +525,7 @@ int res;
 				//로그파일에 해당 정보 쓰기 위해 내용 추가
 				sprintf(tmpbuf, "\t%s %ldbytes\n", srcflist[i], statbuf.st_size);
 				strcat(logbuf, tmpbuf);	
-		}
+			}
 		}
 		
 	}
@@ -554,8 +540,6 @@ int res;
 			}	
 		}
 		if (isfound == FALSE) { //dst에 있는데 src에 없는 건 삭제된 것이므로
-			printf("삭제됨! - %s\n", dstflist[i]);
-
 			sprintf(tmpbuf, "\t%s delete\n", dstflist[i]);	//삭제된 파일 정보 로그에 쓰기 위해
 			strcat(logbuf, tmpbuf);	 //로그 작성 버퍼에 추가
 			if (remove(dstbuf) < 0) { //백업src파일 삭제
@@ -610,9 +594,6 @@ int res;
 		}
 	}
 	fclose(fp);
-
-	
-
 	return TRUE;
 }
 
@@ -623,39 +604,32 @@ int syncFile() { //일반 파일을 동기화
 	char cpcommand[BUFLEN];
 	long fsize;
 	FILE *fp;
-	//struct flock lock;
 	struct stat statbuf;
 	struct stat statbuf2;
 	time_t cur_time;
 
 	memset(logbuf, 0, BUFLEN);
+
 	if (stat(srcPath, &statbuf) < 0) { //src파일정보 가져오기
 		fprintf(stderr, "stat error\n");
 		return FALSE;
 	}
 
-	//동기화 하는 파일 못 열게 함
-	//잠금을 여기해야하나??
-
 	if (!isExist(dstPath, srcName, pathbuf)) { //dst에 src 없는 경우 -> dst에 복사
-		//dst안에 src 복사
-		printf("없는 파일 동기화\n");
 		sprintf(newName, "%s/%s", dstPath, srcName); //복사 될 이름 (dst아래 src파일이름)
-		mySync(newName, srcPath, FALSE);
+		mySync(newName, srcPath, FALSE); //dst안에 src 복사
 
 		//로그파일에 쓸 내용 저장
 		sprintf(tmpbuf, "\t%s %ldbytes\n", srcName, statbuf.st_size);	
 		strcat(logbuf, tmpbuf);
 	}
 	else {	//dst에 src가 있는 경우 -> 동기화 해야함
-		printf("파일 있는거 동기화\n");
 		if (stat(pathbuf, &statbuf2) < 0) { //src파일정보 가져오기
 			fprintf(stderr, "stat error\n");
 			return FALSE;
 		}
 		//src와 dst의 파일이 다른지 비교
 		if(compareFile(srcPath, pathbuf)) { //파일이 달라서(수정) 동기화 하는 경우
-			printf("동기화 필요함\n");
 			mySync(pathbuf, srcPath, TRUE);
 			
 			//로그에 작성할 내용 저장
@@ -686,21 +660,21 @@ int syncFile() { //일반 파일을 동기화
 	time(&cur_time);
 	ctime_r(&cur_time, timebuf);
 	timebuf[19] = 0; //요일 월 일 시간 까지만 출력할것임
-	sprintf(timebuf, "[%s] %s\n", timebuf, usrCommand);	
+	sprintf(tmpbuf, "[%s] %s\n", timebuf, usrCommand);	
 
 	if ((fp = fopen(logFile, "a")) == NULL) {
 		fprintf(stderr, "fopen error for %s\n", logFile);
 		return FALSE;
 	}
-	if (fputs(timebuf, fp) < 0) { //로그 파일 작성
+	if (fputs(tmpbuf, fp) < 0) { //로그 파일 작성
 		fprintf(stderr, "write error\n");
 		return FALSE;
 	}
-	if (strlen(logbuf) > 0) {
+	if(strlen(logbuf) > 0) {
 		if (fputs(logbuf, fp) < 0) { //로그 파일 작성
 			fprintf(stderr, "write error\n");
 			return FALSE;
-	}
+		}
 	}
 	fclose(fp);
 	
@@ -789,7 +763,7 @@ static void cancel_sync_handler(int signo) {
 	}
 	if (is_changed == TRUE) { //파일 변경이 시작된 경우
 		if (is_started || is_finished) { //이미 시작되었으면 파일 동기화 전으로 되돌림
-			if (isDir) //SRC가 디렉토리인 경우
+			if (isDir) //SRC가 디렉토리인 경우 - 디렉토리 내 파일 삭제 후 디렉토리 삭제
 				if (!rmvDir(srcPath)) { //src내의 내용 삭제
 					fprintf(stderr, "rmvDir error for %s\n", srcPath);
 					return ;
@@ -823,12 +797,14 @@ static void cancel_sync_handler(int signo) {
 			}
 		}
 	}
-	 //파일 되돌리기 했거나  // 아직 변경 안된 경우 => 백업 파일 삭제 후 종료
-	if (isDir) //SRC가 디렉토리인 경우
+	
+	//파일 되돌리기 완료 or 아직 변경 안된 경우 => 백업 파일 삭제 후 종료
+	if (isDir) { //SRC가 디렉토리인 경우
 		if (!rmvDir(srcBackup)) { //src백업 내의 내용 삭제
 			fprintf(stderr, "rmvDir error for %s\n", srcBackup);
 			return;
 		}
+	}
 	if (remove(srcBackup) < 0) { //백업src파일 자체 삭제
 			fprintf(stderr, "remove error for %s\n", srcBackup);
 			return;
@@ -845,6 +821,7 @@ static void cancel_sync_handler(int signo) {
 		fprintf(stderr, "remove error for %s\n", dstBackup);
 		return ;
 	}
+	
 	exit(0);	
 	
 }
