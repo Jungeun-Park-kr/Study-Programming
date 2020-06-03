@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
-#pragma warning(disable:4996)
+//#pragma warning(disable:4996)
 
 /* Global declarations */
 /* Variables */
@@ -43,11 +43,37 @@ int lex();
 #define LESSER 29 // <
 #define GREATER 30 // >
 #define EQUAL_SIGN 31 // =
-#define WHILE_LOOP 40 // While
-#define SEMICOLON 50 // ;
+#define SEMICOLON 40 // ;
+#define WHILE_LOOP 50 // While
+#define FOR_LOOP 51	//for
+#define IF 55 //if
+#define ELSE 56 //else
+#define SWITCH 60 //switch
+#define CASE 61 //case
+
+
 
 char WHILE[6] = "while";
 
+#define TOK_TABLE_SIZE (sizeof(LookupTable)/sizeof(*LookupTable))
+#define RES_TABLE_SIZE (sizeof(ReservedTable)/sizeof(*ReservedTable))
+struct {
+	char token;
+	int code;
+} LookupTable[] = {
+	{'(',LEFT_PAREN}, {')',RIGHT_PAREN}, {'+',ADD_OP}, {'-',SUB_OP},
+	{'*', MULT_OP}, {'/', DIV_OP}, {'{',LEFT_BRACE}, {'}',RIGHT_BRACE},
+	{'<', LESSER}, {'>', GREATER}, {'=',EQUAL_SIGN}, {';',SEMICOLON}
+};
+
+struct {
+	char token[10];
+	int code;
+} ReservedTable[] = {
+	{"while",WHILE_LOOP}, {"if", IF}, {"else", ELSE}, 
+	{"switch", SWITCH}, {"case",CASE}, {"for", FOR_LOOP}
+	//,{"int", }, {"char", }, {"double", }, {"float", }
+};
 
 /******************************************************/
 /* main driver */
@@ -66,61 +92,18 @@ int main() {
 
 /* lookup - a function to lookup operators and parentheses            
 and return the token */ 
-int lookup(char ch) {
-	switch (ch) {
-	case '(':
-		addChar();
-		nextToken = LEFT_PAREN;
-		break;
-	case ')':
-		addChar();
-		nextToken = RIGHT_PAREN;
-		break;
-	case '+':
-		addChar();
-		nextToken = ADD_OP;
-		break;
-	case '-':
-		addChar();
-		nextToken = SUB_OP;
-		break;
-	case '*':
-		addChar();
-		nextToken = MULT_OP;
-		break;
-	case '/':
-		addChar();
-		nextToken = DIV_OP;
-		break;
-	case '{' :
-		addChar();
-		nextToken = LEFT_BRACE;
-		break;
-	case '}' :
-		addChar();
-		nextToken = RIGHT_BRACE;
-		break;
-	case '<' :
-		addChar();
-		nextToken = LESSER;
-		break;
-	case '>' :
-		addChar();
-		nextToken = GREATER;
-		break;
-	case '=' :
-		addChar();
-		nextToken = EQUAL_SIGN;
-		break;
-	case ';' :
-		addChar();
-		nextToken = SEMICOLON;
-		break;
-	default:
-		addChar();
-		nextToken = EOF;
-		break;
+int lookup(char ch) { 
+	int i;
+	for (i = 0; i < TOK_TABLE_SIZE; i++) { //lookupTable을 이용하여 해당 토큰을 확인
+		if (ch == LookupTable[i].token) { //동일한 토큰이 있는경우, 토큰 코드 저장
+			addChar();
+			nextToken = LookupTable[i].code;
+			return nextToken; //nextToken 리턴
+		}
 	}
+	//테이블에 없는 경우 - EOF임
+	addChar();
+	nextToken = EOF;
 	return nextToken;
 }
 /*****************************************************/
@@ -160,10 +143,11 @@ void getNonBlank() {
 		getChar();
 }
 
-/***************************************************** /
+/*****************************************************/
 /* lex - a simple lexical analyzer for arithmetic expressions */
 int lex() {
 	lexLen = 0;
+	int i = 0;
 	getNonBlank();
 	switch (charClass) {
 	/* Parse identifiers */
@@ -174,14 +158,15 @@ int lex() {
 			addChar();
 			getChar();
 		}
-		if (!strcmp(lexeme, WHILE)) { //해당 lexeme이 while인지 확인
-			nextToken = WHILE_LOOP;
-			break;
+		for(i=0; i<RES_TABLE_SIZE; i++) {
+			if (!strcmp(lexeme, ReservedTable[i].token)) { //해당 lexeme이 while인지 확인
+				nextToken = ReservedTable[i].code;
+				break;
+			}
 		}
-		else {
-			nextToken = IDENT;
-			break;
-		}
+		nextToken = IDENT;
+		break;
+		
 	/* Parse integer literals */
 	case DIGIT:
 		addChar();
