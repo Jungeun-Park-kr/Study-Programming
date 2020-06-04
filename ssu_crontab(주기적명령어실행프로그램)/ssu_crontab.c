@@ -22,6 +22,7 @@
 extern char crontabFile[BUFLEN];
 extern char crontabLog[BUFLEN];
 char Command[BUFLEN];
+char logCommand[BUFLEN];
 char argv[COMMAND_ARGC][BUFLEN];
 int argc;
 FILE *cronfp;
@@ -57,7 +58,7 @@ int printPrompt(void) {
             return -1;
         }
         while(fgets(listbuf, BUFLEN, cronfp) != NULL) { //저장된 모든 명령어 출력
-            sprintf(idxbuf, "%d. ", idx++);
+            sprintf(idxbuf, " %d. ", idx++);
             fputs(idxbuf,stdout); //현재 명령어 번호 출력
             if (fputs(listbuf, stdout) == EOF) { //뿌려주기
                 fprintf(stderr, "puts error\n");
@@ -148,7 +149,7 @@ int doPrompt(void) {
                 time(&cur_time);
 	            ctime_r(&cur_time, timebuf);
                 timebuf[19] = 0; //요일 월 일 시간 까지만 출력할것임
-                sprintf(logbuf, "[%s] %s\n", timebuf, usrCommand);
+                sprintf(logbuf, "[%s] add %s", timebuf, logCommand);
                 if((logfp = fopen(crontabLog, "a+")) < 0){
                     fprintf(stderr, "fopen error for %s\n", crontabLog);
                     return FALSE;
@@ -161,7 +162,6 @@ int doPrompt(void) {
             }
         }
         else if(strstr(argv[0], "remove") != NULL) {
-            //printf("--remove 명령어--\n");
             if (argc != 2) { //명령어 인자 개수 확인!
                 fprintf(stderr, "usage : remove <REMOVE NUMBER>\n");
                 continue;
@@ -171,15 +171,14 @@ int doPrompt(void) {
                 fprintf(stderr, "Invalid remove number!");
                 continue;
             }
-            strcat(usrCommand, argv[0]);
-            //strcat(usrCommand, argv[1]);
+            //strcat(usrCommand, argv[0]);
             if (!doRemove(rmvnum)) //삭제 실패
                 continue;
             else { //정상적으로 삭제된 경우 -> 로그파일에 기록
                 time(&cur_time);
 	            ctime_r(&cur_time, timebuf);
                 timebuf[19] = 0; //요일 월 일 시간 까지만 출력할것임
-                sprintf(logbuf, "[%s] %s\n", timebuf, usrCommand); //해당 명령어 
+                sprintf(logbuf, "[%s] remove %s", timebuf, logCommand); //해당 명령어 
                 if((logfp = fopen(crontabLog, "a+")) < 0){
                     fprintf(stderr, "fopen error for %s\n", crontabLog);
                     return FALSE;
@@ -225,12 +224,13 @@ int doAdd(char *command) { //파라미터로 넘어온 명령어를 ssu_crontab_
         return FALSE;
     }
     command[strlen(command)-1] = '\0';
-    //sprintf(command, "%s\n", command);
+    strcpy(logCommand, command); //로그에 작성할 추가한 명령어 저장
     if (fputs(command, fp) < 0) { //내용 추가
         fprintf(stderr, "fupts error\n");
         return FALSE;
     }
     fclose(fp);
+    return TRUE;
 }
 
 int doRemove(int num) {
@@ -252,6 +252,7 @@ int doRemove(int num) {
     //해당 번호 제외 임시 파일에 복사
     while (fgets(listbuf, BUFLEN, cronfp) != NULL) {
         if (idx == num) {
+            strcpy(logCommand, listbuf); //로그에 작성할 삭제된 명령어 저장
             idx++;
             continue;
         }
