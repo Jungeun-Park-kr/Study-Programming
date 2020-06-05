@@ -50,7 +50,10 @@ int lex();
 #define ELSE 56 //else
 #define SWITCH 60 //switch
 #define CASE 61 //case
-
+#define INT 70
+#define CHAR 71
+#define DOUBLE 72
+#define FLOAT 73
 
 
 char WHILE[6] = "while";
@@ -72,7 +75,7 @@ struct {
 } ReservedTable[] = {
 	{"while",WHILE_LOOP}, {"if", IF}, {"else", ELSE}, 
 	{"switch", SWITCH}, {"case",CASE}, {"for", FOR_LOOP}
-	//,{"int", }, {"char", }, {"double", }, {"float", }
+	,{"int",INT}, {"char",CHAR}, {"double",DOUBLE}, {"float",FLOAT}
 };
 
 /******************************************************/
@@ -124,7 +127,6 @@ void getChar() {
 	if ((nextChar = getc(in_fp)) != EOF)
 	{
 		if (isalpha(nextChar)) {
-			//if (nextChar == 'w')
 			charClass = LETTER;
 		}
 		else if (isdigit(nextChar))
@@ -148,6 +150,7 @@ void getNonBlank() {
 int lex() {
 	lexLen = 0;
 	int i = 0;
+	int check = 0;
 	getNonBlank();
 	switch (charClass) {
 	/* Parse identifiers */
@@ -158,12 +161,16 @@ int lex() {
 			addChar();
 			getChar();
 		}
-		for(i=0; i<RES_TABLE_SIZE; i++) {
-			if (!strcmp(lexeme, ReservedTable[i].token)) { //해당 lexeme이 while인지 확인
+		for(i = 0; i < RES_TABLE_SIZE; i++) {
+			if (!strcmp(lexeme, ReservedTable[i].token)) { //해당 lexeme이 reserved word인지 확인
+				//printf("reserved word : %s code : %d\n", ReservedTable[i].token, ReservedTable[i].code);
 				nextToken = ReservedTable[i].code;
+				check = 1;
 				break;
 			}
 		}
+		if (check == 1)
+			break;
 		nextToken = IDENT;
 		break;
 		
