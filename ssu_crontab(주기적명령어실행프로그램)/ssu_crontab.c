@@ -1,12 +1,3 @@
-
-/*
- *  실행주기 확인 필요
- *  remove 명령어 정상 작동 되는지 확인필요
- *      remove할때, crond프로그램이 해당 파일 접근 불가하도록 막아야 함
- *  add 명령어 추가 필요 (doAdd()함수 작성하기)
- *  crond프로그램 작성 필요
- * 
- */
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -30,8 +21,9 @@ FILE *cronfp;
 int main() {
     char saved_path[BUFLEN];
     FILE *fp;
-    getcwd(saved_path, BUFLEN); //현재 작업 경로 저장
 
+    getcwd(saved_path, BUFLEN); //현재 작업 경로 저장
+    strcpy(workDir, saved_path);
     sprintf(crontabFile, "%s/%s",saved_path, "ssu_crontab_file"); //크론탭 파일 이름저장
     sprintf(crontabLog, "%s/%s", saved_path, "ssu_crontab_log"); //크론탭 로그 파일 이름 저장
     if (access(crontabLog, F_OK)) { //로그파일 없는경우 생성
@@ -41,11 +33,12 @@ int main() {
         }
         fclose(fp);
     }
-    //프롬프트 실행
     if(!doPrompt())
         exit(1);
 
+    exit(0);
 }
+
 
 int printPrompt(void) {
     char *prompt = "\n 20180753> ";
@@ -79,7 +72,6 @@ int doPrompt(void) {
     char errorbuf[BUFLEN], logbuf[BUFLEN], timebuf[BUFLEN];
     int idx = 0, i;
     char *ptr;
-    Schedule schedule;
     char usrCommand[BUFLEN];
     FILE *logfp;
     time_t cur_time;
@@ -317,15 +309,31 @@ int checkRange(int i, int num) {
     return TRUE;
 }
 
+// int checkHyphen(int i, char *buf) {
+//     char *delimeter = "-";
+//     int n1, n2;
+//     if (strstr(buf, delimeter) != NULL) {
+//         sscanf(buf, "%d-%d", &n1,&n2);
+//         if (n1 > n2)
+//             return FALSE;
+//         if (!checkRange(i, n1) || !checkRange(i, n2))
+//             return FALSE;
+//         return TRUE;
+//     }
+//     else
+//         return FALSE;
+// }
+
 int checkSchedule(void) {
-    char *ptr;
+    char *ptr, *ptr2;
     int i = 0;
     int num=0, n1 =0, n2=0;
+    char tmp[BUFLEN];
 
     if (argc < 7) 
         return FALSE;
     
-    for (i=1; i<6; i++) {
+    for (i = 1; i < 6; i++) {
         //printf("argv[%d]:%s길이 : %ld\n", i, argv[i],strlen(argv[i]));
         if ((strlen(argv[i]) == 1) || (strlen(argv[i]) == 2)) { //해당 항목의 길이가 1이나 2인 경우
             if(!strcmp(argv[i], "*")) { //'*'만 있어야 함
@@ -344,7 +352,7 @@ int checkSchedule(void) {
                 }
             }
             else {
-                printf("숫자도 별도 아님\n");
+                //printf("숫자도 별도 아님\n");
                 fprintf(stderr, "실행주기 입력 오류\n");
                 return FALSE;
             }
@@ -352,22 +360,15 @@ int checkSchedule(void) {
         }
         else { //길이가 3 이상, 1미만인 경우
             if (strstr(argv[i], "-") != NULL) { //범위 지정인 경우 : 숫자-숫자 구조여야 함
-                ptr = strtok(argv[i], "-");
-                if (!isdigit(ptr)) {
+            //printf("-임\n");
+                if (sscanf(argv[i], "%d-%d", &n1, &n2) != 2) { //숫자 아닌 경우
                     fprintf(stderr, "실행주기 입력 오류\n");
-                    return FALSE;
+                     return FALSE;
                 }
-                n1 = atoi(ptr);
                 if (!checkRange(i, n1)) {
                     fprintf(stderr, "실행주기 입력 오류\n");
                     return FALSE;
                 }
-                ptr = strtok(NULL, "-"); //하이픈 다음 숫자 가져옴
-                if (!isdigit(ptr)) {
-                    fprintf(stderr, "실행주기 입력 오류\n");
-                    return FALSE;
-                }
-                n2 = atoi(ptr);
                 if (!checkRange(i, n2)) {
                     fprintf(stderr, "실행주기 입력 오류\n");
                     return FALSE;
@@ -376,14 +377,13 @@ int checkSchedule(void) {
                     fprintf(stderr, "실행주기 입력 오류\n");
                     return FALSE;
                 }
+                //printf("저장완료함\n");
             }
             else if (strstr(argv[i], "*/") != NULL) { //건너뛰는 경우1 : */숫자 구조여야 함
-                ptr = strtok(argv[i], "*/");
-                if (!isdigit(ptr[0])) { //문자 뒤 내용이 숫자가 아니면 오류
+                if ((sscanf(argv[i], "*/%d", &num) != 1)) { //문자 뒤 내용이 숫자가 아니면 오류
                     fprintf(stderr, "실행주기 입력 오류\n");
                     return FALSE;
                 }
-                num = atoi(ptr);
                 if (!checkRange(i, num)) {
                     fprintf(stderr, "실행주기 입력 오류\n");
                     return FALSE;
@@ -392,6 +392,30 @@ int checkSchedule(void) {
             else if (strstr(argv[i], ",") != NULL) { // 목록의 경우 : 모든 숫자가 범위 안에 포함되어야 함
                 ptr = strtok(argv[i], ",");
                 while (ptr != NULL) { //목록의 경우 모든 숫자가 범위에 속하는지 확인
+                    if (strstr(ptr, "-") != NULL) {
+
+                    }
+                    if (strstr(ptr, "-") != NULL) { // 목록 내의 범위가 있는 경우
+                        // ptr2 = strstr(ptr, "-");
+                        // while(ptr2 != NULL) {
+                        // }
+                        if (sscanf(ptr, "%d-%d", &n1, &n2) != 2) { //숫자 아닌 경우
+                            fprintf(stderr, "실행주기 입력 오류\n");
+                            return FALSE;
+                        }
+                        if (!checkRange(i, n1)) {
+                            fprintf(stderr, "실행주기 입력 오류\n");
+                            return FALSE;
+                        }
+                        if (!checkRange(i, n2)) {
+                            fprintf(stderr, "실행주기 입력 오류\n");
+                            return FALSE;
+                        }
+                        if (n1 > n2 || n1 == n2) { //숫자1-숫자2 구조중 두 숫자가 같거나, 앞 숫자가 더 큰경우
+                            fprintf(stderr, "실행주기 입력 오류\n");
+                            return FALSE;
+                        }
+                    }
                     num = atoi(ptr);
                     if (!checkRange(i, num)) { //항복의 숫자 범위 확인
                         fprintf(stderr, "실행주기 입력 오류\n");
@@ -401,16 +425,20 @@ int checkSchedule(void) {
                 }
             }
             else if ((strstr(argv[i], "*/") == NULL) && (strstr(argv[i], "/") != NULL)) { //건너뛰는 경우2 : 숫자/숫자 구조여야 함 (-과 같이 쓰일 수 있으므로 if문으로)
-                ptr = strtok(argv[i], "/");
-                if (isdigit(ptr[0])) { //숫자인지 확인
+                if ((sscanf(argv[i], "%d/%d", &n1, &n2)) != 2) {
                     fprintf(stderr, "실행주기 입력 오류\n");
                     return FALSE;
                 }
-                ptr = strtok(NULL, "/"); 
-                if (isdigit(ptr[0])) { // '/'다음 문자도 숫자인지 확인
-                    fprintf(stderr, "실행주기 입력 오류\n");
-                    return FALSE;
-                }
+                // ptr = strtok(argv[i], "/");
+                // if (isdigit(ptr[0])) { //숫자인지 확인
+                //     fprintf(stderr, "실행주기 입력 오류\n");
+                //     return FALSE;
+                // }
+                // ptr = strtok(NULL, "/"); 
+                // if (isdigit(ptr[0])) { // '/'다음 문자도 숫자인지 확인
+                //     fprintf(stderr, "실행주기 입력 오류\n");
+                //     return FALSE;
+                // }
             }
             else { //그 외의 문자가 사용된 경우
                 fprintf(stderr, "실행주기 입력 오류\n");
@@ -421,34 +449,4 @@ int checkSchedule(void) {
         }
     }
     return TRUE;
-}
-
-
-int crond_daemon_init(void) { //명령어를 실행시킬 디몬 생성
-    pid_t pid;
-    int fd, maxfd;
-
-    if ((pid = fork()) < 0) {
-        fprintf(stderr, "fork error\n");
-        exit(1);
-    }
-    else if (pid != 0)
-        exit(0);
-    
-    pid = getpid();
-    setsid();
-    signal(SIGTTIN, SIG_IGN); //작업제어와 관련된 시그널 무시
-    signal(SIGTTOU, SIG_IGN);
-    signal(SIGTSTP, SIG_IGN);
-    maxfd = getdtablesize();
-
-    for (fd=0; fd < maxfd; fd++)
-        close(fd);
-
-    umask(0);
-    chdir("/");
-    fd = open("dev/null", O_RDWR);
-    dup(0);
-    dup(0);
-    return 0;
 }
