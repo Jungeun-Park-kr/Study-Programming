@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <time.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -60,7 +61,6 @@ int printPrompt(void) {
         return idx;
     }
     //파일 없는 경우 제어 바로 여기로 옴
-    printf("파일없음\n");
     fputs(prompt, stdout); //프롬프트 출력
     return idx;
 }
@@ -80,7 +80,7 @@ int doPrompt(void) {
         }
 
         if ((idx = printPrompt()) < 0) { //프롬프트 출력
-            fprintf(stderr, "printPrompt error!\n");
+            fprintf(stderr, "printPrompt() error!\n");
             return FALSE;
         }
         fgets(Command, BUFLEN, stdin);
@@ -100,7 +100,7 @@ int doPrompt(void) {
             ptr = strtok(NULL, " ");
         }
 
-        memset(usrCommand, 0,BUFLEN);
+        memset(usrCommand, 0, BUFLEN);
         if(strstr(argv[0], "add") != NULL) {
             //ssu_crontab_file 여부 확인
             if (access(crontabFile, F_OK)) { //파일이 없는 경우
@@ -118,7 +118,6 @@ int doPrompt(void) {
             
             if (!checkSchedule()) { //실행주기 올바르게 입력되었는지 확인
                 continue; //안된경우 프롬프트 출력
-                
             }
             else { //실행주기 확인 완료!
                 for(i=1; i<6; i++) { //argv[1]~argv[5]까지 저장
@@ -131,7 +130,7 @@ int doPrompt(void) {
                 strcat(usrCommand, argv[i]);
                 strcat(usrCommand, " ");
             }
-
+            printf("usrcommand : %s\n", usrCommand);
             if (!doAdd(usrCommand)) //Add명령어 ssu_crontab_file에 저장
                 continue; //실패한 경우, 프롬프트 출력
             else { //정상적으로 파일에 저장된 경우 -> 로그 파일에 저장한 명령어 기록
@@ -376,7 +375,7 @@ int checkSchedule(void) {
     char *ptr;
     int i = 0, j = 0, idx = 0;
     char token[BUFLEN][BUFLEN];
-
+    char buf[BUFLEN];
     if (argc < 7) 
         return FALSE;
     
@@ -384,7 +383,8 @@ int checkSchedule(void) {
         //printf("argv[%d]:%s길이 : %ld\n", i, argv[i],strlen(argv[i]));
         if (strstr(argv[i], ",") != NULL) { // 목록의 경우 : 모든 숫자가 범위 안에 포함되어야 함
             idx = 0;
-            ptr = strtok(argv[i], ",");
+            strcpy(buf, argv[i]); //문자열 복사 (원본보호)
+            ptr = strtok(buf, ",");
             for(j = 0; j < BUFLEN; j++)
                 memset(token[j], 0, BUFLEN);
             while (ptr != NULL) { //목록의 경우 한 개의 목록으로 토큰을 나눠 토큰 배열 생성
@@ -400,6 +400,7 @@ int checkSchedule(void) {
                     return FALSE;
                 }
             }
+            return TRUE;
         }
         else { //목록아닌 경우 : 단일 항목이므로 바로 확인하면 됨
             if(!checkItem(argv[i], i)) { //올바르게 항목 사용 되었는지 확인
