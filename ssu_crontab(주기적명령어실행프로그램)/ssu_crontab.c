@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <time.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -60,7 +61,6 @@ int printPrompt(void) {
         return idx;
     }
     //파일 없는 경우 제어 바로 여기로 옴
-    printf("파일없음\n");
     fputs(prompt, stdout); //프롬프트 출력
     return idx;
 }
@@ -80,7 +80,7 @@ int doPrompt(void) {
         }
 
         if ((idx = printPrompt()) < 0) { //프롬프트 출력
-            fprintf(stderr, "printPrompt error!\n");
+            fprintf(stderr, "printPrompt() error!\n");
             return FALSE;
         }
         fgets(Command, BUFLEN, stdin);
@@ -100,8 +100,8 @@ int doPrompt(void) {
             ptr = strtok(NULL, " ");
         }
 
-        memset(usrCommand, 0,BUFLEN);
-        if(strstr(argv[0], "add") != NULL) {
+        memset(usrCommand, 0, BUFLEN);
+        if(strstr(argv[0], "add") != NULL) { //--add명령어--
             //ssu_crontab_file 여부 확인
             if (access(crontabFile, F_OK)) { //파일이 없는 경우
                 if ((cronfp = fopen(crontabFile, "w+")) == NULL) { //새로 생성
@@ -118,7 +118,6 @@ int doPrompt(void) {
             
             if (!checkSchedule()) { //실행주기 올바르게 입력되었는지 확인
                 continue; //안된경우 프롬프트 출력
-                
             }
             else { //실행주기 확인 완료!
                 for(i=1; i<6; i++) { //argv[1]~argv[5]까지 저장
@@ -131,7 +130,6 @@ int doPrompt(void) {
                 strcat(usrCommand, argv[i]);
                 strcat(usrCommand, " ");
             }
-
             if (!doAdd(usrCommand)) //Add명령어 ssu_crontab_file에 저장
                 continue; //실패한 경우, 프롬프트 출력
             else { //정상적으로 파일에 저장된 경우 -> 로그 파일에 저장한 명령어 기록
@@ -150,7 +148,7 @@ int doPrompt(void) {
                 fclose(logfp);
             }
         }
-        else if(strstr(argv[0], "remove") != NULL) {
+        else if(strstr(argv[0], "remove") != NULL) { //--remove명령어--
             if (argc != 2) { //명령어 인자 개수 확인!
                 fprintf(stderr, "usage : remove <REMOVE NUMBER>\n");
                 continue;
@@ -160,7 +158,7 @@ int doPrompt(void) {
                 fprintf(stderr, "Invalid remove number!");
                 continue;
             }
-            //strcat(usrCommand, argv[0]);
+
             if (!doRemove(rmvnum)) //삭제 실패
                 continue;
             else { //정상적으로 삭제된 경우 -> 로그파일에 기록
@@ -179,8 +177,7 @@ int doPrompt(void) {
                 fclose(logfp);
             }
         }
-        else if (strstr(argv[0], "exit") != NULL) {
-            //printf("--exit 명령어--\n");
+        else if (strstr(argv[0], "exit") != NULL) { //--exit 명령어--
             break;
         }
         else { //이외의 명령어 -> 프롬프트 출력'
@@ -314,19 +311,16 @@ int checkItem(char *item, int type) {
             if (checkRange(num, type)) //범위 올바르게 사용된경우 TRUE
                 return TRUE;
             else {
-                printf("숫자아닌데 길이 짧음");
                 return FALSE;
             }
         }
         else {
-            printf("숫자도 *도 아닌데 길이 짧음");
             return FALSE;
         }
     }
     else { //숫자가 3이상인 경우
         if (strstr(item, "*/") != NULL) { //*/사용된 경우
             if ((sscanf(item, "*/%d", &num) != 1)) { //문자 뒤 내용이 숫자가 아니면 오류
-                printf("문자 뒤 내용 숫자 아님\n");
                 return FALSE;
             }
             if (checkRange(num, type)) { //해당 숫자의 범위 확인
@@ -337,36 +331,25 @@ int checkItem(char *item, int type) {
         }
         else if (strstr(item, "-") != NULL) {
             if (sscanf(item, "%d-%d", &n1, &n2) != 2) { //숫자 아닌 경우
-                printf("범위에 숫자 사용이 안됨\n");
                 return FALSE;
             }
             if (!checkRange(n1, type)) { //n1 범위 확인
-                printf("n1 범위 틀림\n");
                 return FALSE;
             }
             if (!checkRange(n2, type)) { //n2 범위 확인
-                printf("n2범위 틀림\n");
-                return FALSE;
-            }
-            if (n1 > n2 || n1 == n2) { //숫자1-숫자2 구조중 두 숫자가 같거나, 앞 숫자가 더 큰경우
                 return FALSE;
             }
             if (strstr(item, "/") != NULL) { //-와 /가 함께 사용된 경우
                 if (sscanf(item, "%d-%d/%d", &n1, &n2, &num) != 3) { //형식에 맞게 사용되지 않은 경우 false
-                    printf("n1-n2/num 사용 틀림\n");
-                    printf("n1 : %d, n2 : %d, num : %d\n", n1,n2,num);
                     return FALSE;
                 }
-                if (n2-n1 < num) { //주기가 올바르게 사용되지 않은 경우
-                    printf("n1-n2/num 인데 num 사용 틀림\n");
-                    printf("n1 : %d, n2 : %d, num : %d\n", n1,n2,num);
+                if (abs(n2-n1) < num) { //주기가 올바르게 사용되지 않은 경우
                     return FALSE;
                 }
             }
             return TRUE;
         }
         else { //이 외의 기호 사용시 false리턴
-            printf("이상한 기호 사용\n");
             return FALSE;
         }
     }
@@ -376,7 +359,7 @@ int checkSchedule(void) {
     char *ptr;
     int i = 0, j = 0, idx = 0;
     char token[BUFLEN][BUFLEN];
-
+    char buf[BUFLEN];
     if (argc < 7) 
         return FALSE;
     
@@ -384,26 +367,25 @@ int checkSchedule(void) {
         //printf("argv[%d]:%s길이 : %ld\n", i, argv[i],strlen(argv[i]));
         if (strstr(argv[i], ",") != NULL) { // 목록의 경우 : 모든 숫자가 범위 안에 포함되어야 함
             idx = 0;
-            ptr = strtok(argv[i], ",");
+            strcpy(buf, argv[i]); //문자열 복사 (원본보호)
+            ptr = strtok(buf, ",");
             for(j = 0; j < BUFLEN; j++)
                 memset(token[j], 0, BUFLEN);
             while (ptr != NULL) { //목록의 경우 한 개의 목록으로 토큰을 나눠 토큰 배열 생성
                 strcpy(token[idx++],ptr);
                 ptr = strtok(NULL, ",");
             }
-            for(j=0; j<idx; j++) {
-                printf("token[%d]:%s\n",j, token[j]);
-            }
             for(j = 0; j < idx; j++) { //생성된 목록 토큰 중 하나라도 틀렸으면 다 틀린것임
                 if (!checkItem(token[i], i)) {
-                    fprintf(stderr, "실행주기 입력 오류\n");
+                    fprintf(stderr, "---실행주기 입력 오류---\n");
                     return FALSE;
                 }
             }
+            return TRUE;
         }
         else { //목록아닌 경우 : 단일 항목이므로 바로 확인하면 됨
             if(!checkItem(argv[i], i)) { //올바르게 항목 사용 되었는지 확인
-                fprintf(stderr, "실행주기 입력 오류\n");
+                fprintf(stderr, "---실행주기 입력 오류---\n");
                 return FALSE;
             }
         }

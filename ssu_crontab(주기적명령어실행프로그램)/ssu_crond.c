@@ -24,7 +24,6 @@ int main(void) {
     sprintf(crontabLog, "%s/%s", workDir, "ssu_crontab_log"); //크론탭 로그 파일 이름 저장
     crond_pid = crond_daemon_init();
     chdir(workDir);
-    //printf("pid : %d\n", crond_pid);
     if(crond_pid == 0) { //생성한 데몬프로세스는 명령어 수행
         tm *now;
         //명령어 실행 시작
@@ -43,9 +42,8 @@ int main(void) {
             hour = now->tm_hour;
             min = now->tm_min;
             wday = now->tm_wday;
-            printf("현재 시간 : min:%d hour:%d day:%d mon:%d wday:%d", min,hour,day,mon, wday);
+            //printf("현재시간 : min:%d, hour:%d, day:%d, mon:%d, wday:%d\n",min,hour,day,mon,wday);
             if (doCrond()) { //호출 후 리턴되면
-                printf("--crond수행 끝남 1분 기다리는 중--\n");
                 sleep(60); //다음 1분 까지 기다림
             }
         }
@@ -64,15 +62,14 @@ int crond_daemon_init(void) {//명령어를 실행시킬 디몬 생성
     else if (pid != 0)
         return pid;
     
-    
     setsid();
     signal(SIGTTIN, SIG_IGN); //작업제어와 관련된 시그널 무시
     signal(SIGTTOU, SIG_IGN);
     signal(SIGTSTP, SIG_IGN);
     maxfd = getdtablesize();
 
-    // for (fd=0; fd < maxfd; fd++)
-    //     close(fd);
+    for (fd=0; fd < maxfd; fd++)
+        close(fd);
 
     umask(0);
     chdir("/");
@@ -99,16 +96,13 @@ int doCrond() {
     }
     while(fgets(listbuf, BUFLEN, cronfp) != NULL) { //저장된 모든 명령어 한줄씩 가져옴
         strcpy(tmpbuf, listbuf); //명령어를 tmpbuf에 복사
-        printf("읽어온 명령어 : %s\n", tmpbuf);
         command = malloc(sizeof(char) * BUFLEN); //읽어온 명령어를 저장할 배열의 메모리 할당
         idx = commandlen = 0;
         isMatch = TRUE; //시간이 일치하는지 확인하는 변수
         ptr = strtok(listbuf, " "); //공백을 기준으로 토큰을 나눔
         while (ptr != NULL) {
-            //printf("ptr : %s\n",ptr);
             if (idx > 4) {//실행 주기 부분 모두 저장한 경우 빠져나감
                 strcpy(command, tmpbuf + commandlen);
-                //fputs(command,stdout);
                 break;
             }
             commandlen += (strlen(ptr)+1); //해당 명령어 길이 크기를 저장
@@ -120,20 +114,14 @@ int doCrond() {
             //명령어에 , 있는 경우 또 토큰으로 나눔
             if (!checkTime(schedule[i], i)) { 
                 //하나라도 시간 틀린 경우 다음 명령어 확인 위해 빠져나감
-                printf("틀린 시간 - schedule[%d]=%s\n", i, schedule[i]);
                 isMatch = FALSE; //시간 맞지 않음을 저장
-                //printf("시간아님\n");
                 break;
             }
         }
         if (isMatch) { //시간이 같은 경우 
-            printf("시간 같음\n");
-            //system()함수로 명령어 실행
-            res = system(command);
-            printf("res : %d\n", res);
+            res = system(command); //system()함수로 명령어 실행
             if (res == -1 || res == 127) { //fork() error, exec계열 error시 로그 안찍음
                 fclose(cronfp);
-                //printf("system()실패 끝냠\n");
                 return TRUE;
             }
             //정상 수행 완료되었으면 로그 쓰기
@@ -152,14 +140,12 @@ int doCrond() {
         }
     }
     fclose(cronfp);
-    //printf("끝냠\n");
     return TRUE;
 }
 
 int compareTime(char *time, int type) {
     // 단일 항목에 해당하는 time과 현재 시간 ctime을 비교해 맞으면 TRUE, 틀리면 FALSE를 리턴함
     // 파라미터 : time - 지금 확인할 단일 항목, type - 항목의 종류(분1 ,시2 ,일3 ,월4 ,요일5) 
-    
     int num, n1, n2;
     int i;
     int begin, end; //항목별로 시작값, 끝값 다름
@@ -219,27 +205,53 @@ int compareTime(char *time, int type) {
             if (strstr(time, "/") != NULL) { // n1-n2/num 구조인 경우
                 if (sscanf(time, "%d-%d/%d", &n1, &n2, &num) != 3) //범위의 값 가져오기
                     return FALSE;
-                if (n1 <= ctime && ctime <= n2) { //현재 시간이 항목 사이 값일 때만 실행
-                    for (i = n1-1; i <= n2; i += num) {
-                        if (i == ctime) { //시간 맞음
-                            printf("맞는 -/주기 : i:%d\n", i);
-                            return TRUE;
+                if (n1 <= n2) { //n2가 더 큰 경우
+                    if (n1 <= ctime && ctime <= n2) { //현재 시간이 항목 사이 값일 때만 실행
+                        for (i = n1-1; i <= n2; i += num) {
+                            if (i == ctime)  //시간 맞음
+                                return TRUE;
+                            else if (i > ctime)  //실행 주기 해당 X 
+                                return FALSE;
                         }
-                        else if (i > ctime) { //실행 주기 해당 X 
-                            printf("틀린 -/주기 i:%d\n", i);
-                            return FALSE;
+                        return FALSE;
+                    }
+                    return FALSE;
+                }
+                else if (n1 > n2) { //n1이 더 큰 경우
+                    if ((n1 <= ctime && ctime < end)&&(ctime <= n2 && begin <= ctime)) { //실행 가능한 범위 확인- 현재 시간이 n1보단 크고, n2보단 작으며 각 begin~end 사이 범위어야 함
+                        for(i = n1-1;  ;i += num) {
+                            if (i > end) {
+                                i = i-end-i; //end값 넘어서는 경우 넘치는 만큼 빼줌(ex, 시:25 분 60 61 등)
+                                continue;
+                            }
+                            if (i == ctime) //시간 맞는 경우
+                                return TRUE;
+                            else if (n1 < ctime && ctime < n2) //실행 주기에 해당하지 않는 값인 경우
+                                return FALSE;
                         }
                     }
                     return FALSE;
                 }
                 else //현재 시간이 범위 안에
-                    return FALSE;
+                    return FALSE;         
             }
             else { //그냥 n1-n2 범위만 사용된 경우
                 if (sscanf(time, "%d-%d", &n1, &n2) != 2) //범위의 숫자 n1-n2 형태로 저장
                     return FALSE;
-                if (n1 <= ctime && ctime <= n2) //현재 시간이 범위 내의 값인 경우
-                    return TRUE;
+                if (n1 <= n2) { // n1<=n2인 경우
+                    if (n1 <= ctime && ctime <= n2) //현재 시간이 범위 내의 값인 경우
+                        return TRUE;
+                    else
+                        return FALSE;
+                }
+                else if (n1 > n2) { //앞 범위 시간이 더 큰경우
+                    if (n1 >= ctime) //n1보다 현재 시간이 더 크면 true
+                        return TRUE;
+                    else if (n2 <= ctime) //n2보다 현재시간이 더 작으면 true
+                        return TRUE;
+                    else
+                        return FALSE;
+                }
                 else //범위가 아닌 경우
                     return FALSE;
             }
@@ -253,6 +265,7 @@ int checkTime(char *time, int type) {
     //현재 시간과 항목의 시간이 일치하면 TRUE, 불일치하면 FALSE 리턴
     //파라미터 : idx - 실행주기의 각 항목, time - 항목 문자열
     char token[BUFLEN][BUFLEN];
+    char buf[BUFLEN]; 
     char *ptr;
     int i, idx;
     int isMatch = FALSE;
@@ -261,14 +274,12 @@ int checkTime(char *time, int type) {
             memset(token[i], 0, BUFLEN);
         idx = 0;
         isMatch = FALSE;
-        ptr = strtok(time, ",");
+        strcpy(buf, time); //원본 보호용 버퍼에 복사
+        ptr = strtok(buf, ",");
         while (ptr != NULL) { //목록의 경우 한 개의 목록으로 토큰을 나눠 토큰 배열 생성
             strcpy(token[idx++],ptr); 
             ptr = strtok(NULL, ",");
         }
-        // for(i = 0; i < idx; i++) {
-        //     printf("token[%d]:%s\n",i, token[i]);
-        // }
         for (i = 0; i < idx; i++) 
             if (compareTime(token[i], type)) { //토큰 배열 중 하나라도 만족하면 됨
                 isMatch = TRUE;
@@ -286,5 +297,4 @@ int checkTime(char *time, int type) {
         else
             return FALSE;
     }
-           
 }
