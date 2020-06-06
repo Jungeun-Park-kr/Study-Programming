@@ -40,18 +40,23 @@ char workPath[BUFLEN];
 
 FILE *logfp;
 
-char *rtrim(char *str) { //문자열의 우측에 존재하는 공백을 제거 후 리턴
-	char tmp[BUFLEN];
-	char *end;
+int main(int argc, char *argv[]) {
+	
+	struct timeval start_time, end_time;
+	gettimeofday(&start_time, NULL); //프로그램 실행 시간 저장
 
-	strcpy(tmp, str);
-	end = tmp + strlen(tmp) - 1;
-	while (end != str && isspace(*end))
-		--end;
+	ssu_rsync(argc, argv);
 
-	*(end + 1) = '\0';
-	str = tmp;
-	return str;
+	gettimeofday(&end_time, NULL); //프로그램 종료 시간 저장
+
+	end_time.tv_sec -= start_time.tv_sec; //프로그램 런타임 구함
+	if (end_time.tv_usec < start_time.tv_usec) { 
+		end_time.tv_sec--;
+		end_time.tv_usec += SECOND_TO_MICRO;
+	}
+	end_time.tv_usec -= start_time.tv_usec;
+	printf("Runtime: %ld:%06ld(sec:usec)\n", end_time.tv_sec, end_time.tv_usec); //런타임 출력 후 종료
+	exit(0);
 }
 
 void ssu_rsync(int argc, char *argv[]) {
@@ -79,19 +84,16 @@ void ssu_rsync(int argc, char *argv[]) {
 			fprintf(stderr, "realpath error for %s\n", argv[1]);
 			exit(1);
 		}
-		
 		if (realpath(argv[3], dstPath) == NULL) {  //dst 이름  절대경로로 저장
 			fprintf(stderr, "realpath error for %s\n", argv[2]);
 			exit(1);
 		}
-		
 	}
 	else if (argc == 3) {
 		if (realpath(argv[1], srcPath) == NULL) { //src이름 절대경로로 저장
 			fprintf(stderr, "realpath error for %s\n", argv[1]);
 			exit(1);
 		}
-		
 		if (realpath(argv[2], dstPath) == NULL) {  //dst 이름  절대경로로 저장
 			fprintf(stderr, "realpath error for %s\n", argv[2]);
 			exit(1);
@@ -144,9 +146,9 @@ void ssu_rsync(int argc, char *argv[]) {
 	sprintf(cpcommand, "cp -p -r %s %s", dstPath, dstBackup);
 	system(cpcommand);
 	
-	if (argc == 3)
+	if (argc == 3) //옵션 없는 경우 src, dst는 1,2번째
 		compareFile(argv[1], argv[2]);
-	else if (argc == 4)
+	else if (argc == 4) //옵션 사용된경우 src dst는 2,3번째
 		compareFile(argv[2], argv[3]);
 	
 	if (!checkOption(argc, argv)) //옵션 체크
@@ -156,8 +158,8 @@ void ssu_rsync(int argc, char *argv[]) {
 		fprintf(stderr, "doSync error\n");
 		exit(1);
 	}
-			
 }
+
 int checkOption(int argc, char *argv[]) {
 	int i, j;
 	int c;
@@ -176,6 +178,7 @@ int checkOption(int argc, char *argv[]) {
 		}
 	}
 }
+
 int doSync() {
 	struct stat statbuf;
 	int fd;
@@ -186,7 +189,6 @@ int doSync() {
 		fprintf(stderr, "stat error\n");
 		return FALSE;
 	}
-	
 	//동기화 하는 파일 못 열게 함
 	lock.l_type = F_WRLCK;
 	lock.l_whence = 0;
@@ -221,7 +223,6 @@ int doSync() {
 			fcntl(fd, F_SETLK, &lock);
 			return FALSE;
 		}
-		
 	}
 	else if ((statbuf.st_mode & S_IFMT) == S_IFDIR) { //src파일이 디렉토리인 경우
 		if (!syncDir()) {
@@ -265,6 +266,7 @@ long getDirSize(char *dirName) {
 	char tmp[BUFLEN];
 	int type;
 	off_t dsize = 0;
+
 	if ((dp = opendir(dirName)) == NULL) { //파일 오픈 실패한 경우 0리턴
 		fprintf(stderr, "opendir error for %s\n", dirName);
 		return 0;
@@ -301,7 +303,7 @@ int rmvDir(char *dirname) {
 	struct stat statbuf;
 
 	if ((cnt = scandir(dirname, &flist, NULL, alphasort)) == -1) { //모든 파일 정보 가져옴
-		fprintf(stderr, "scandir error\n");
+		fprintf(stderr, "scandir error for %s\n", dirname);
 		return FALSE;
 	}
 	for (i = 0; i < cnt; i++) {
@@ -345,22 +347,22 @@ int compareFile( char *file1, char *file2) {
 		//printf("수정시간이 다름\n");
 		return TRUE;	//수정시간 다름
 	}
-	else
-	{
-		//printf("수정시간 같음\n");
-	}
+	// else
+	// {
+	// 	printf("수정시간 같음\n");
+	// }
 
-	if ((statbuf1.st_mode & S_IFMT) == S_IFREG) {
+	if ((statbuf1.st_mode & S_IFMT) == S_IFREG) { //일반 파일인 경우 바로 크기 저장
 		size1 = statbuf1.st_size;
 	}
-	else if ((statbuf1.st_mode & S_IFMT) == S_IFDIR) {
+	else if ((statbuf1.st_mode & S_IFMT) == S_IFDIR) { //디렉토리인 경우 함수로 구해서 크기 저장
 		size1 = getDirSize(file1);
 	}
 
-	if ((statbuf2.st_mode & S_IFMT) == S_IFREG) {
+	if ((statbuf2.st_mode & S_IFMT) == S_IFREG) { //일반 파일인 경우 바로 크기 저장
 		size2 = statbuf2.st_size;
 	}
-	else if ((statbuf2.st_mode & S_IFMT) == S_IFDIR) {
+	else if ((statbuf2.st_mode & S_IFMT) == S_IFDIR) { //디렉토리인 경우 함수로 구해서 크기 저장
 		size2 = getDirSize(file2);
 	}
 	if (size1 == size2) { //파일 사이즈 동일한 경우
@@ -409,21 +411,24 @@ int saveDirInfo(char *path, char(*flist)[BUFLEN], int idx) {
 			return FALSE;
 		}
 		
-		if ((statbuf.st_mode & S_IFMT) == S_IFREG) { //일반 파일인 경우 바로 시간 저장
+		if ((statbuf.st_mode & S_IFMT) == S_IFREG) { //일반 파일인 경우 바로 저장
 			strcpy(flist[i], buf);
-			//tm[i] = *localtime(&statbuf.st_mtime);
 			i++;
 			filecnt++;
 		}
-		if (rOption) {
-			if ((statbuf.st_mode & S_IFMT) == S_IFDIR) { //r옵션 설정 되어있고, 디렉토리면 시간 저장 후 재귀호출
-				strcpy(flist[i], buf);
+		else if ((statbuf.st_mode & S_IFMT) == S_IFDIR) { //디렉토리인 경우
+			if (rOption) { //r옵션 설정 되어있으면 재귀호출
 				if (i==j) //아직 재귀호출 안된경우
 					sprintf(nxtpath, "%s", filelist[j]->d_name);
 				else //재귀호출 된 경우
 					sprintf(nxtpath, "%s/%s", path, filelist[j]->d_name);
 				allcnt += saveDirInfo(nxtpath, flist, (idx + allcnt)); //하위 파일 정보도 저장
 				i++;
+			}
+			else { //r옵션 설정 안되있는 경우 일반파일과 동일하게 저장
+				strcpy(flist[i], buf);
+				i++;
+				filecnt++;
 			}
 		}
 	}
@@ -465,6 +470,7 @@ int syncDir() { //디렉토리 파일을 동기화
 	int srccnt, dstcnt, fsize;
 	int i, j;
 	int isfound, ismodified;
+	int res;
 	time_t cur_time;
 	FILE *fp;
 
@@ -478,7 +484,7 @@ int syncDir() { //디렉토리 파일을 동기화
 	dstcnt = saveDirInfo(dstPath, dstflist,  0); //DST파일 정보 가져옴
 	chdir(workPath);
 
-int res;
+
 	for (i=0; i < srccnt; i++) {
 		isfound = FALSE;
 		ismodified = FALSE;
@@ -496,7 +502,7 @@ int res;
 		}
 		if (isfound == FALSE) { //src에 있는데 dst에 없는 건 생성된 것이므로
 			sprintf(newName, "%s/%s", dstPath, srcflist[i]); //복사 될 이름 (dst아래 src파일이름)
-			printf("newname:%s\nsrcbuf:%s\n",newName,srcbuf);
+			//printf("newname:%s\nsrcbuf:%s\n",newName,srcbuf);
 			mySync(newName, srcbuf, FALSE); //dst디렉토리에 새로 생성해줌
 
 			//생성된 파일 정보 동기화하여 로그파일에 작성
@@ -527,27 +533,33 @@ int res;
 				strcat(logbuf, tmpbuf);	
 			}
 		}
-		
 	}
 	for (i=0; i < dstcnt; i++) {
 		isfound = FALSE;
 		sprintf(dstbuf, "%s/%s", dstPath, dstflist[i]);
 		for(j=0; j<srccnt; j++) {
-			if (!strcmp(dstflist[i], srcflist[j])) {
-				
-				isfound = TRUE;
+			if (!strcmp(dstflist[i], srcflist[j])) { //파일 이름 비교
+				isfound = TRUE; //같은 이름 찾은 경우 빠져나감
 				break;
 			}	
 		}
-		if (isfound == FALSE) { //dst에 있는데 src에 없는 건 삭제된 것이므로
+		if ((isfound == FALSE) && mOption) { //dst에 있는데 src에 없는 파일인 경우 => m옵션 설정시에 삭제 해줌
 			sprintf(tmpbuf, "\t%s delete\n", dstflist[i]);	//삭제된 파일 정보 로그에 쓰기 위해
 			strcat(logbuf, tmpbuf);	 //로그 작성 버퍼에 추가
-			if (remove(dstbuf) < 0) { //백업src파일 삭제
+			if (stat(dstbuf, &statbuf) < 0) { //파일 정보 가져오기
+					fprintf(stderr, "stat error for %s\n", dstbuf);
+					return FALSE;
+			}
+			if (S_ISDIR(statbuf.st_mode)) { //디렉토리인 경우 디렉토리 내의 파일 모두 삭제
+				if (!rmvDir(dstbuf)) { 
+					fprintf(stderr, "rmvDir error for %s\n", dstflist[i]);
+					return FALSE;
+				}
+			}
+			if (remove(dstbuf) < 0) { //해당 파일 자체 삭제
 				fprintf(stderr, "remove error for %s\n", dstbuf);
 				return FALSE;
 			}
-			//dst의 파일도 삭제
-			
 		}
 	}
 
@@ -623,7 +635,7 @@ int syncFile() { //일반 파일을 동기화
 		sprintf(tmpbuf, "\t%s %ldbytes\n", srcName, statbuf.st_size);	
 		strcat(logbuf, tmpbuf);
 	}
-	else {	//dst에 src가 있는 경우 -> 동기화 해야함
+	else { //dst에 src가 있는 경우 -> 동기화 해야함
 		if (stat(pathbuf, &statbuf2) < 0) { //src파일정보 가져오기
 			fprintf(stderr, "stat error\n");
 			return FALSE;
@@ -821,33 +833,26 @@ static void cancel_sync_handler(int signo) {
 		fprintf(stderr, "remove error for %s\n", dstBackup);
 		return ;
 	}
-	
-	exit(0);	
-	
 }
 
-void printUsage() {
+char *rtrim(char *str) { //문자열의 우측에 존재하는 공백을 제거 후 리턴
+	char tmp[BUFLEN];
+	char *end;
+
+	strcpy(tmp, str);
+	end = tmp + strlen(tmp) - 1;
+	while (end != str && isspace(*end))
+		--end;
+
+	*(end + 1) = '\0';
+	str = tmp;
+	return str;
+}
+
+void printUsage() { //프로그램 사용법 출력 함수
 	printf("Uage : ssu_rsync [OPTION] <SRC> <DST>\n");
 	printf("Option : \n");
 	printf(" -r 		SRC가 디렉토리인 경우 서브 디렉토리 내의 파일도 함께 동기화\n");
 	printf(" -t			필요한 대상들을 묶어 한번에 동기화 작업 수행\n");
 	printf(" -m			DST 디렉토리에 SRC파일(또는 디렉토리)이 없는 경우 해당 파일을 DST내에서 삭제\n");
-}
-int main(int argc, char *argv[]) {
-	
-	struct timeval start_time, end_time;
-	gettimeofday(&start_time, NULL);	
-
-	ssu_rsync(argc, argv);
-
-	gettimeofday(&end_time, NULL);
-
-	end_time.tv_sec -= start_time.tv_sec;
-	
-	if (end_time.tv_usec < start_time.tv_usec) {
-		end_time.tv_sec--;
-		end_time.tv_usec += SECOND_TO_MICRO;
-	}
-	end_time.tv_usec -= start_time.tv_usec;
-	printf("Runtime: %ld:%06ld(sec:usec)\n", end_time.tv_sec, end_time.tv_usec);
 }
