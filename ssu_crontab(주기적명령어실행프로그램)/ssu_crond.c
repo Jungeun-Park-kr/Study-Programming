@@ -42,6 +42,7 @@ int main(void) {
             hour = now->tm_hour;
             min = now->tm_min;
             wday = now->tm_wday;
+            //printf("현재시간 : min:%d, hour:%d, day:%d, mon:%d, wday:%d\n",min,hour,day,mon,wday);
             if (doCrond()) { //호출 후 리턴되면
                 sleep(60); //다음 1분 까지 기다림
             }
@@ -60,7 +61,6 @@ int crond_daemon_init(void) {//명령어를 실행시킬 디몬 생성
     }
     else if (pid != 0)
         return pid;
-    
     
     setsid();
     signal(SIGTTIN, SIG_IGN); //작업제어와 관련된 시그널 무시
@@ -114,16 +114,12 @@ int doCrond() {
             //명령어에 , 있는 경우 또 토큰으로 나눔
             if (!checkTime(schedule[i], i)) { 
                 //하나라도 시간 틀린 경우 다음 명령어 확인 위해 빠져나감
-                printf("틀린 시간 - schedule[%d]=%s\n", i, schedule[i]);
                 isMatch = FALSE; //시간 맞지 않음을 저장
                 break;
             }
         }
         if (isMatch) { //시간이 같은 경우 
-            printf("시간 같음\n");
-            
             res = system(command); //system()함수로 명령어 실행
-            printf("res : %d\n", res);
             if (res == -1 || res == 127) { //fork() error, exec계열 error시 로그 안찍음
                 fclose(cronfp);
                 return TRUE;
@@ -209,23 +205,53 @@ int compareTime(char *time, int type) {
             if (strstr(time, "/") != NULL) { // n1-n2/num 구조인 경우
                 if (sscanf(time, "%d-%d/%d", &n1, &n2, &num) != 3) //범위의 값 가져오기
                     return FALSE;
-                if (n1 <= ctime && ctime <= n2) { //현재 시간이 항목 사이 값일 때만 실행
-                    for (i = n1-1; i <= n2; i += num) {
-                        if (i == ctime)  //시간 맞음
-                            return TRUE;
-                        else if (i > ctime)  //실행 주기 해당 X 
-                            return FALSE;
+                if (n1 <= n2) { //n2가 더 큰 경우
+                    if (n1 <= ctime && ctime <= n2) { //현재 시간이 항목 사이 값일 때만 실행
+                        for (i = n1-1; i <= n2; i += num) {
+                            if (i == ctime)  //시간 맞음
+                                return TRUE;
+                            else if (i > ctime)  //실행 주기 해당 X 
+                                return FALSE;
+                        }
+                        return FALSE;
+                    }
+                    return FALSE;
+                }
+                else if (n1 > n2) { //n1이 더 큰 경우
+                    if ((n1 <= ctime && ctime < end)&&(ctime <= n2 && begin <= ctime)) { //실행 가능한 범위 확인- 현재 시간이 n1보단 크고, n2보단 작으며 각 begin~end 사이 범위어야 함
+                        for(i = n1-1;  ;i += num) {
+                            if (i > end) {
+                                i = i-end-i; //end값 넘어서는 경우 넘치는 만큼 빼줌(ex, 시:25 분 60 61 등)
+                                continue;
+                            }
+                            if (i == ctime) //시간 맞는 경우
+                                return TRUE;
+                            else if (n1 < ctime && ctime < n2) //실행 주기에 해당하지 않는 값인 경우
+                                return FALSE;
+                        }
                     }
                     return FALSE;
                 }
                 else //현재 시간이 범위 안에
-                    return FALSE;
+                    return FALSE;         
             }
             else { //그냥 n1-n2 범위만 사용된 경우
                 if (sscanf(time, "%d-%d", &n1, &n2) != 2) //범위의 숫자 n1-n2 형태로 저장
                     return FALSE;
-                if (n1 <= ctime && ctime <= n2) //현재 시간이 범위 내의 값인 경우
-                    return TRUE;
+                if (n1 <= n2) { // n1<=n2인 경우
+                    if (n1 <= ctime && ctime <= n2) //현재 시간이 범위 내의 값인 경우
+                        return TRUE;
+                    else
+                        return FALSE;
+                }
+                else if (n1 > n2) { //앞 범위 시간이 더 큰경우
+                    if (n1 >= ctime) //n1보다 현재 시간이 더 크면 true
+                        return TRUE;
+                    else if (n2 <= ctime) //n2보다 현재시간이 더 작으면 true
+                        return TRUE;
+                    else
+                        return FALSE;
+                }
                 else //범위가 아닌 경우
                     return FALSE;
             }
@@ -271,5 +297,4 @@ int checkTime(char *time, int type) {
         else
             return FALSE;
     }
-           
 }
