@@ -1,4 +1,3 @@
-//명령어를 수행할 디몬 프로세스를 위한 ssu_crond.c
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
@@ -21,7 +20,7 @@ int mon, day, hour, min, wday;
 int main(void) {
     pid_t crond_pid;
     getcwd(workDir, BUFLEN); //현재 작업 경로 저장
-    sprintf(crontabFile, "%s/%s",workDir, "ssu_crontab_file"); //크론탭 파일 이름저장
+    sprintf(crontabFile, "%s/%s", workDir, "ssu_crontab_file"); //크론탭 파일 이름저장
     sprintf(crontabLog, "%s/%s", workDir, "ssu_crontab_log"); //크론탭 로그 파일 이름 저장
     crond_pid = crond_daemon_init();
     chdir(workDir);
@@ -44,9 +43,9 @@ int main(void) {
             hour = now->tm_hour;
             min = now->tm_min;
             wday = now->tm_wday;
-            //printf("현재 시간 : min:%d hour:%d day:%d mon:%d wday:%d", min,hour,day,mon, wday);
+            printf("현재 시간 : min:%d hour:%d day:%d mon:%d wday:%d", min,hour,day,mon, wday);
             if (doCrond()) { //호출 후 리턴되면
-                //printf("--crond수행--\n");
+                printf("--crond수행 끝남 1분 기다리는 중--\n");
                 sleep(60); //다음 1분 까지 기다림
             }
         }
@@ -85,25 +84,26 @@ int crond_daemon_init(void) {//명령어를 실행시킬 디몬 생성
 
 int doCrond() {
     FILE *cronfp, *logfp;
-    char listbuf[BUFLEN], timebuf[BUFLEN], logbuf[BUFLEN], tmpbuf[BUFLEN];
+    char listbuf[BUFLEN], timebuf[BUFLEN], tmpbuf[BUFLEN];
     char *ptr;
     char schedule[5][BUFLEN];
     char *command;
     int idx = 0, i = 0;
     int isMatch = TRUE;
     int commandlen=0, res;
+  
 
     if ((cronfp = fopen(crontabFile, "r")) == NULL) {
         fprintf(stderr, "fopen error for %s\n", crontabFile);
         return FALSE;
     }
     while(fgets(listbuf, BUFLEN, cronfp) != NULL) { //저장된 모든 명령어 한줄씩 가져옴
-        strcpy(tmpbuf, listbuf);
-        //printf("읽어온 명령어 : %s\n", tmpbuf);
-        command = malloc(sizeof(char) * BUFLEN);
+        strcpy(tmpbuf, listbuf); //명령어를 tmpbuf에 복사
+        printf("읽어온 명령어 : %s\n", tmpbuf);
+        command = malloc(sizeof(char) * BUFLEN); //읽어온 명령어를 저장할 배열의 메모리 할당
         idx = commandlen = 0;
-        isMatch = TRUE;
-        ptr = strtok(listbuf, " ");
+        isMatch = TRUE; //시간이 일치하는지 확인하는 변수
+        ptr = strtok(listbuf, " "); //공백을 기준으로 토큰을 나눔
         while (ptr != NULL) {
             //printf("ptr : %s\n",ptr);
             if (idx > 4) {//실행 주기 부분 모두 저장한 경우 빠져나감
@@ -111,21 +111,20 @@ int doCrond() {
                 //fputs(command,stdout);
                 break;
             }
-            commandlen += (strlen(ptr)+1);
+            commandlen += (strlen(ptr)+1); //해당 명령어 길이 크기를 저장
             strcpy(schedule[idx++], ptr); //실행 주기 부분만 schedule에 저장하기
-            //printf("주기:%s\n",ptr);
-            ptr = strtok(NULL, " ");
+            ptr = strtok(NULL, " "); //다음 토큰 값 저장
         }
         //해당 명령어가 지금 실행되어야 하는지 확인
-        for(i = 0; i < 5; i++) {
-            //printf("검사시간 : %s\n", schedule[i]);
-            if(!checkTime(i, schedule[i])) { //하나라도 시간 틀린 경우 다음 명령어 확인 위해 빠져나감
-                //printf("틀린 시간 - scheduel[%d]=%s\n", i, schedule[i]);
-                isMatch = FALSE;
+        for(i = 0; i < 5; i++) { //항목별로 하나씩 확인
+            //명령어에 , 있는 경우 또 토큰으로 나눔
+            if (!checkTime(schedule[i], i)) { 
+                //하나라도 시간 틀린 경우 다음 명령어 확인 위해 빠져나감
+                printf("틀린 시간 - schedule[%d]=%s\n", i, schedule[i]);
+                isMatch = FALSE; //시간 맞지 않음을 저장
                 //printf("시간아님\n");
                 break;
             }
-
         }
         if (isMatch) { //시간이 같은 경우 
             printf("시간 같음\n");
@@ -137,481 +136,155 @@ int doCrond() {
                 //printf("system()실패 끝냠\n");
                 return TRUE;
             }
-
             //정상 수행 완료되었으면 로그 쓰기
             ctime_r(&cur_time, timebuf);
             timebuf[19] = 0; //요일 월 일 시간 까지만 출력할것임
-            sprintf(logbuf, "[%s] run %s", timebuf, command);
+            sprintf(tmpbuf, "[%s] run %s", timebuf, command);
             if((logfp = fopen(crontabLog, "a+")) < 0){
                 fprintf(stderr, "fopen error for %s\n", crontabLog);
                 return FALSE;
             }
-            if (fputs(logbuf, logfp) < 0) { //로그 파일 작성
+            if (fputs(tmpbuf, logfp) < 0) { //로그 파일 작성
                 fprintf(stderr, "write error\n");
                 return FALSE;
             }
             fclose(logfp);
         }
-        
     }
     fclose(cronfp);
     //printf("끝냠\n");
     return TRUE;
 }
 
-int checkTime(int idx, char *time) { //idx는 실행주기의 각 항목, time은 항목 문자열
-    //현재 시간과 항목의 시간이 일치하면 TRUE, 불일치하면 FALSE 리턴
-    int num = 0, n1 = 0, n2 = 0;
-    char *ptr, *ptr2;
-    int i = 0, tmp = 0;
-    //printf("strlen : %ld\ntime:%s\n", strlen(time),time);
-    switch(idx) {
-    case 0: //분인 경우
-        //printf("--분(min : %d)--\n",min);
-        if ((strlen(time) == 1)||(strlen(time) == 2)) { //항목 길이가 1이나 2면 무조건 숫자여야 함
-           // printf("길이 1, 2\n");
-            //printf("time : %s\n", time);
-            if (!strcmp(time, "*")) { //*만 있는 경우 무조건 맞음
-               // printf("*만있음\n");
-                return TRUE;
-            }
-            else if(isdigit(time[0])) { //일단 숫자인지 확인
-                //숫자 맞으면 현재 시간과 일치하는지 확인
-                //printf("숫자임\n");
-                num = atoi(time);
-                if (num == min) {
-                   // printf("같음\n");
-                    return TRUE;
-                }
-               // printf("다름\n");
-                return FALSE;
-            }
-            return FALSE;
-        }
-        else { //길이 3 이상인 경우
-        //printf("길이 3이상\n");
-            if(strstr(time, "-") != NULL) {
-                if (sscanf(time, "%d-%d", &n1, &n2) != 2) //숫자 2개 아닌 경우
-                    return FALSE;
-                //printf("n1 : %d, n2 : %d\n", n1,n2);
-                if ((ptr = strstr(time, "/")) != NULL) { // 하이픈이랑 슬래쉬 같이 사용된 경우
-                    //printf("-/두개다 쓰임\n");
-                    if (sscanf(time, "%d-%d/%d", &n1, &n2, &num) != 3)
-                        return FALSE;
-                    for (i=1; ; i++) {
-                        tmp = n1+(i*num);
-                        if (tmp > n2) //tmp가 n2보다 크면 범위 벗어나므로 break
-                            break;
-                        if (min == tmp) //tmp가 min과 같으면 맞음
-                            return TRUE;
-                    }
-                }
-                else { //범위에 맞는 숫자인 경우
-                //printf("-만 쓰임\n");
-                    if ((n1 <= min) && (min <= n2))
-                        return TRUE;
-                }
-                return FALSE;
-            }
-            else if (strstr(time, ",") != NULL) {
-                ptr = strtok(time, ",");
-                while (ptr != NULL) { //목록의 숫자가 현재 시간과 일치하는지 확인
-                    num = atoi(ptr);
-                    if (num == min)
-                        return TRUE;
-                    if(strstr(ptr, "-") != NULL) { //목록 안에 범위 있는 경우
-                        if (sscanf(ptr, "%d-%d", &n1, &n2) != 2) //숫자 2개 아닌 경우
-                            return FALSE;
-                    
-                        if ((ptr2 = strstr(ptr, "/")) != NULL) { // 하이픈이랑 슬래쉬 같이 사용된 경우
-                            if (sscanf(time, "%d-%d/%d", &n1, &n2, &num) != 3) {
-                                return FALSE;
-                                tmp = 0;
-                                for (i=1; ; i++) {
-                                    tmp = n1+(i*num);
-                                    if (tmp > n2) //tmp가 n2보다 크면 범위 벗어나므로 break
-                                        break;
-                                    if (min == tmp) //tmp가 시간과 같으면 맞음
-                                        return TRUE;
-                                }
-                            }
-                        }
-                        else { //범위에 맞는 숫자인 경우
-                            if (n1 <= min && min <= n2)
-                                return TRUE;
-                        }
-                    }
-                    ptr = strtok(NULL, ",");
-                }
-                return FALSE; //목록 끝까지 못찾은 경우
-            }
-            else if (strstr(time, "*/") != NULL) {
-                if (sscanf(time, "*/%d", &num) != 1) { //문자 뒤 내용이 숫자가 아니면 오류
-                    return FALSE;
-                }
-                //printf("num : %d\n",num);
-                if (min % num == 1) { //현재시간/num의 나머지가 0이면 현재 시간에 해당함! 
-                    return TRUE;
-                }
-                return FALSE;
-            }
-            else //그 외의 다른 경우 다 틀림
-                return FALSE;
-        }
-        return FALSE;
-
-    case 1: //시인 경우
-   // printf("--시--\n");
-        if ((strlen(time) == 1)||(strlen(time) == 2)) { //항목 길이가 1이나 2면 무조건 숫자여야 함
-            if (!strcmp(time, "*")) { //*만 있는 경우 무조건 맞음
-                //printf("*만있음\n");
-                return TRUE;
-            }
-            else if(isdigit(time[0])) { //일단 숫자인지 확인
-                //숫자 맞으면 현재 시간과 일치하는지 확인
-                num = atoi(time);
-                if (num == hour)
-                    return TRUE;
-            }
-        }
-        else { //길이 3 이상인 경우
-            if(strstr(time, "-") != NULL) {
-                if (sscanf(time, "%d-%d", &n1, &n2) != 2) //숫자 2개 아닌 경우
-                    return FALSE;
-            
-                if ((ptr = strstr(time, "/")) != NULL) { // 하이픈이랑 슬래쉬 같이 사용된 경우
-                    if (sscanf(time, "%d-%d/%d", &n1, &n2, &num) != 3) {
-                        return FALSE;
-                        tmp = 0;
-                        for (i=1; ; i++) {
-                            tmp =  n1+(i*num);
-                            if (tmp > n2) //tmp가 n2보다 크면 범위 벗어나므로 break
-                                break;
-                            if (hour == tmp) //tmp가 시간과 같으면 맞음
-                                return TRUE;
-                        }
-                    }
-                }
-                else { //범위에 맞는 숫자인 경우
-                    if ((n1 <= hour) && (hour <= n2))
-                        return TRUE;
-                }  
-            }
-            else if (strstr(time, ",") != NULL) {
-                ptr = strtok(time, ",");
-                while (ptr != NULL) { //목록의 숫자가 현재 시간과 일치하는지 확인
-                    num = atoi(ptr);
-                    if (num == hour)
-                        return TRUE;
-                    if(strstr(ptr, "-") != NULL) { //목록 안에 범위 있는 경우
-                        if (sscanf(ptr, "%d-%d", &n1, &n2) != 2) //숫자 2개 아닌 경우
-                            return FALSE;
-                    
-                        if ((ptr2 = strstr(ptr, "/")) != NULL) { // 하이픈이랑 슬래쉬 같이 사용된 경우
-                            if (sscanf(time, "%d-%d/%d", &n1, &n2, &num) != 3) {
-                                return FALSE;
-                                tmp = 0;
-                                for (i=1; ; i++) {
-                                    tmp =  n1+(i*num);
-                                    if (tmp > n2) //tmp가 n2보다 크면 범위 벗어나므로 break
-                                        break;
-                                    if (hour == tmp) //tmp가 시간과 같으면 맞음
-                                        return TRUE;
-                                }
-                            }
-                        }
-                        else { //범위에 맞는 숫자인 경우
-                            if (n1 <= hour && hour <= n2)
-                                return TRUE;
-                        }
-                    }
-                    ptr = strtok(NULL, ",");
-                }
-                return FALSE; //목록 끝까지 못찾은 경우
-            }
-            else if (strstr(time, "*/") != NULL) {
-                ptr = strtok(time, "*/");
-                if (!isdigit(time[0])) { //문자 뒤 내용이 숫자가 아니면 오류
-                    return FALSE;
-                }
-                num = atoi(ptr);
-                if (hour % num == 1) { //현재시간/num의 나머지가 0이면 현재 시간에 해당함! 
-                    return TRUE;
-                }
-                return FALSE;
-            }
-            else //그 외의 다른 경우 다 틀림
-                return FALSE;
-        }
-        return FALSE;
-
-    case 2: //일인 경우
-   // printf("--일--\n");
-        if ((strlen(time) == 1)||(strlen(time) == 2)) { //항목 길이가 1이나 2면 무조건 숫자여야 함
-            if (!strcmp(time, "*")) { //*만 있는 경우 무조건 맞음
-                //printf("*만있음\n");
-                return TRUE;
-            }
-            else if (!strcmp(time, "*")) { //*만 있는 경우 무조건 맞음
-                //printf("*만있음\n");
-                return TRUE;
-            }
-            else if(isdigit(time[0])) { //일단 숫자인지 확인
-                //숫자 맞으면 현재 시간과 일치하는지 확인
-                num = atoi(time);
-                if (num == day)
-                    return TRUE;
-            }
-            return FALSE;
-        }
-        else { //길이 3 이상인 경우
-            if(strstr(time, "-") != NULL) {
-                if (sscanf(time, "%d-%d", &n1, &n2) != 2) //숫자 2개 아닌 경우
-                    return FALSE;
-            
-                if ((ptr = strstr(time, "/")) != NULL) { // 하이픈이랑 슬래쉬 같이 사용된 경우
-                    if (sscanf(time, "%d-%d/%d", &n1, &n2, &num) != 3) {
-                        return FALSE;
-                        tmp = 0;
-                        i=0;
-                        for (i=(num-1); ; i += (num-1)) {
-                            
-                            tmp =  n1+i;
-                            if (tmp > n2) //tmp가 n2보다 크면 범위 벗어나므로 break
-                                break;
-                            if (day == tmp) { //tmp가 시간과 같으면 맞음
-                                printf("같음..\n");
-                                return TRUE;
-                            }
-                        }
-                    }
-                }
-                else { //범위에 맞는 숫자인 경우
-                    if (n1 <= day && day <= n2)
-                        return TRUE;
-                }
-            }
-            else if (strstr(time, ",") != NULL) {
-                ptr = strtok(time, ",");
-                while (ptr != NULL) { //목록의 숫자가 현재 시간과 일치하는지 확인
-                    num = atoi(ptr);
-                    if (num == day)
-                        return TRUE;
-                    if(strstr(ptr, "-") != NULL) { //목록 안에 범위 있는 경우
-                        if (sscanf(ptr, "%d-%d", &n1, &n2) != 2) //숫자 2개 아닌 경우
-                            return FALSE;
-                    
-                        if ((ptr2 = strstr(ptr, "/")) != NULL) { // 하이픈이랑 슬래쉬 같이 사용된 경우
-                            if (sscanf(time, "%d-%d/%d", &n1, &n2, &num) != 3) {
-                                return FALSE;
-                                tmp = 0;
-                                for (i=1; ; i++) {
-                                    tmp =  n1+(i*num);
-                                    if (tmp > n2) //tmp가 n2보다 크면 범위 벗어나므로 break
-                                        break;
-                                    if (day == tmp) //tmp가 시간과 같으면 맞음
-                                        return TRUE;
-                                }
-                            }
-                        }
-                        else { //범위에 맞는 숫자인 경우
-                            if (n1 <= day && day <= n2)
-                                return TRUE;
-                        }
-                    }
-                    ptr = strtok(NULL, ",");
-                }
-                return FALSE; //목록 끝까지 못찾은 경우
-            }
-            else if (strstr(time, "*/") != NULL) {
-                ptr = strtok(time, "*/");
-                if (!isdigit(time[0])) { //문자 뒤 내용이 숫자가 아니면 오류
-                    return FALSE;
-                }
-                num = atoi(ptr);
-                if (day % num == 1) { //현재시간/num의 나머지가 0이면 현재 시간에 해당함! 
-                    return TRUE;
-                }
-                return FALSE;
-            }
-            else //그 외의 다른 경우 다 틀림
-                return FALSE;
-        }
-        return FALSE;
-
-    case 3: //월인 경우
-    //printf("--월--\n");
-        if ((strlen(time) == 1)||(strlen(time) == 2)) { //항목 길이가 1이나 2면 무조건 숫자여야 함
-            if (!strcmp(time, "*")) { //*만 있는 경우 무조건 맞음
-                //printf("*만있음\n");
-                return TRUE;
-            }
-            else if(isdigit(time[0])) { //일단 숫자인지 확인
-                //숫자 맞으면 현재 시간과 일치하는지 확인
-                num = atoi(time);
-                if (num == mon)
-                    return TRUE;
-            }
-            return FALSE;
-        }
-        else { //길이 3 이상인 경우
-            if(strstr(time, "-") != NULL) {
-               if (sscanf(time, "%d-%d", &n1, &n2) != 2) //숫자 2개 아닌 경우
-                    return FALSE;
-            
-                if ((ptr = strstr(time, "/")) != NULL) { // 하이픈이랑 슬래쉬 같이 사용된 경우
-                    if (sscanf(time, "%d-%d/%d", &n1, &n2, &num) != 3) {
-                        return FALSE;
-                        tmp = 0;
-                        for (i=1; ; i++) {
-                            tmp =  n1+(i*num);
-                            if (tmp > n2) //tmp가 n2보다 크면 범위 벗어나므로 break
-                                break;
-                            if (mon == tmp) //tmp가 시간과 같으면 맞음
-                                return TRUE;
-                        }
-                    }
-                }
-                else { //범위에 맞는 숫자인 경우
-                    if (n1 <= mon && mon <= n2)
-                        return TRUE;
-                }  
-            }
-            else if (strstr(time, ",") != NULL) {
-                ptr = strtok(time, ",");
-                while (ptr != NULL) { //목록의 숫자가 현재 시간과 일치하는지 확인
-                    num = atoi(ptr);
-                    if (num == mon)
-                        return TRUE;
-                    if(strstr(ptr, "-") != NULL) { //목록 안에 범위 있는 경우
-                        if (sscanf(ptr, "%d-%d", &n1, &n2) != 2) //숫자 2개 아닌 경우
-                            return FALSE;
-                    
-                        if ((ptr2 = strstr(ptr, "/")) != NULL) { // 하이픈이랑 슬래쉬 같이 사용된 경우
-                            if (sscanf(time, "%d-%d/%d", &n1, &n2, &num) != 3) {
-                                return FALSE;
-                                tmp = 0;
-                                for (i=1; ; i++) {
-                                    tmp =  n1+(i*num);
-                                    if (tmp > n2) //tmp가 n2보다 크면 범위 벗어나므로 break
-                                        break;
-                                    if (mon == tmp) //tmp가 시간과 같으면 맞음
-                                        return TRUE;
-                                }
-                            }
-                        }
-                        else { //범위에 맞는 숫자인 경우
-                            if (n1 <= mon && mon <= n2)
-                                return TRUE;
-                        }
-                    }
-                    ptr = strtok(NULL, ",");
-                }
-                return FALSE; //목록 끝까지 못찾은 경우
-            }
-            else if (strstr(time, "*/") != NULL) {
-                ptr = strtok(time, "*/");
-                if (!isdigit(time[0])) { //문자 뒤 내용이 숫자가 아니면 오류
-                    return FALSE;
-                }
-                num = atoi(ptr);
-                if (mon % num == 1) { //현재시간/num의 나머지가 0이면 현재 시간에 해당함! 
-                    return TRUE;
-                }
-                return FALSE;
-            }
-            else //그 외의 다른 경우 다 틀림
-                return FALSE;
-        }
-        return FALSE;
-
-    case 4: //요일인 경우
-    //printf("--요일--\n");
-        if ((strlen(time) == 1)||(strlen(time) == 2)) { //항목 길이가 1이나 2면 무조건 숫자여야 함
-            if (!strcmp(time, "*")) { //*만 있는 경우 무조건 맞음
-                //printf("*만있음\n");
-                return TRUE;
-            }
-            else if(isdigit(time[0])) { //일단 숫자인지 확인
-                //숫자 맞으면 현재 시간과 일치하는지 확인
-                num = atoi(time);
-                if (num == wday)
-                    return TRUE;
-            }
-            return FALSE;
-        }
-        else { //길이 3 이상인 경우
-            if(strstr(time, "-") != NULL) {
-               if (sscanf(time, "%d-%d", &n1, &n2) != 2) //숫자 2개 아닌 경우
-                    return FALSE;
-            
-                if ((ptr = strstr(time, "/")) != NULL) { // 하이픈이랑 슬래쉬 같이 사용된 경우
-                    if (sscanf(time, "%d-%d/%d", &n1, &n2, &num) != 3) {
-                        return FALSE;
-                        tmp = 0;
-                        for (i=1; ; i++) {
-                            tmp =  n1+(i*num);
-                            if (tmp > n2) //tmp가 n2보다 크면 범위 벗어나므로 break
-                                break;
-                            if (wday == tmp) //tmp가 시간과 같으면 맞음
-                                return TRUE;
-                        }
-                    }
-                }
-                else { //범위에 맞는 숫자인 경우
-                    if (n1 <= wday && wday <= n2)
-                        return TRUE;
-                } 
-            }
-            else if (strstr(time, ",") != NULL) {
-                ptr = strtok(time, ",");
-                while (ptr != NULL) { //목록의 숫자가 현재 시간과 일치하는지 확인
-                    num = atoi(ptr);
-                    if (num == wday)
-                        return TRUE;
-                    ptr = strtok(NULL, ",");
-                    if(strstr(ptr, "-") != NULL) { //목록 안에 범위 있는 경우
-                        if (sscanf(ptr, "%d-%d", &n1, &n2) != 2) //숫자 2개 아닌 경우
-                            return FALSE;
-                    
-                        if ((ptr2 = strstr(ptr, "/")) != NULL) { // 하이픈이랑 슬래쉬 같이 사용된 경우
-                            if (sscanf(time, "%d-%d/%d", &n1, &n2, &num) != 3) {
-                                return FALSE;
-                                tmp = 0;
-                                for (i=1; ; i++) {
-                                    tmp =  n1+(i*num);
-                                    if (tmp > n2) //tmp가 n2보다 크면 범위 벗어나므로 break
-                                        break;
-                                    if (wday == tmp) //tmp가 시간과 같으면 맞음
-                                        return TRUE;
-                                }
-                            }
-                        }
-                        else { //범위에 맞는 숫자인 경우
-                            if (n1 <= wday && wday <= n2)
-                                return TRUE;
-                        }
-                    }
-                }
-                return FALSE; //목록 끝까지 못찾은 경우
-            }
-            else if (strstr(time, "*/") != NULL) {
-                ptr = strtok(time, "*/");
-                if (!isdigit(time[0])) { //문자 뒤 내용이 숫자가 아니면 오류
-                    return FALSE;
-                }
-                num = atoi(ptr);
-                if (wday % num == 1) { //현재시간/num의 나머지가 0이면 현재 시간에 해당함! 
-                    return TRUE;
-                }
-                return FALSE;
-            }
-            else //그 외의 다른 경우 다 틀림
-                return FALSE;
-        }
-        return FALSE;
+int compareTime(char *time, int type) {
+    // 단일 항목에 해당하는 time과 현재 시간 ctime을 비교해 맞으면 TRUE, 틀리면 FALSE를 리턴함
+    // 파라미터 : time - 지금 확인할 단일 항목, type - 항목의 종류(분1 ,시2 ,일3 ,월4 ,요일5) 
+    
+    int num, n1, n2;
+    int i;
+    int begin, end; //항목별로 시작값, 끝값 다름
+    int ctime; //ctime - 현재 시간
+    switch(type) { //항목종류별로 최대 최소 값이 다름
+    case 0: //분
+        begin = 0;
+        end = 59;
+        ctime = min;
+        break;
+    case 1: //시
+        begin = 0;
+        end = 23;
+        ctime = hour;
+        break;
+    case 2: //일
+        begin = 1;
+        end = 31;
+        ctime = day;
+        break;
+    case 3: //월
+        begin = 1;
+        end = 12;
+        ctime = mon;
+        break;
+    case 4: //요일
+        begin = 0; //일요일
+        end = 6; //월요일
+        ctime = wday;
+        break;
     }
-    return FALSE;
+    if (strlen(time) < 3) {
+        if (!strcmp(time, "*")) //*면 모든 시간에 실행 가능함
+            return TRUE;
+        if (isdigit(time[0])) { //숫자인 경우
+            num = atoi(time);
+            if (num == ctime) //현재시간과 같으면 TRUE리턴
+                return TRUE;
+        }
+        else //그 이외인 경우 false
+            return FALSE;
+    }
+    else {
+        if (strstr(time, "*/") != NULL) { //*/가 사용된 경우
+            if ((sscanf(time, "*/%d", &num) != 1)) { //문자 뒤 내용이 숫자가 아니면 오류
+                return FALSE;
+            }
+            for(i = begin-1; i <= end; i+=num) {
+                if (i == ctime) //해당 주기 값이 현재 시간인 경우
+                    return TRUE;
+                else if (i > ctime)
+                    return FALSE; //실행주기 아님
+            }
+            return FALSE;
+        }
+        else if (strstr(time, "-") != NULL) { // -가 사용된 경우
+            if (strstr(time, "/") != NULL) { // n1-n2/num 구조인 경우
+                if (sscanf(time, "%d-%d/%d", &n1, &n2, &num) != 3) //범위의 값 가져오기
+                    return FALSE;
+                if (n1 <= ctime && ctime <= n2) { //현재 시간이 항목 사이 값일 때만 실행
+                    for (i = n1-1; i <= n2; i += num) {
+                        if (i == ctime) { //시간 맞음
+                            printf("맞는 -/주기 : i:%d\n", i);
+                            return TRUE;
+                        }
+                        else if (i > ctime) { //실행 주기 해당 X 
+                            printf("틀린 -/주기 i:%d\n", i);
+                            return FALSE;
+                        }
+                    }
+                    return FALSE;
+                }
+                else //현재 시간이 범위 안에
+                    return FALSE;
+            }
+            else { //그냥 n1-n2 범위만 사용된 경우
+                if (sscanf(time, "%d-%d", &n1, &n2) != 2) //범위의 숫자 n1-n2 형태로 저장
+                    return FALSE;
+                if (n1 <= ctime && ctime <= n2) //현재 시간이 범위 내의 값인 경우
+                    return TRUE;
+                else //범위가 아닌 경우
+                    return FALSE;
+            }
+        }
+        else //그 외는 다 틀림
+            return FALSE;
+    }
 }
 
-
+int checkTime(char *time, int type) { 
+    //현재 시간과 항목의 시간이 일치하면 TRUE, 불일치하면 FALSE 리턴
+    //파라미터 : idx - 실행주기의 각 항목, time - 항목 문자열
+    char token[BUFLEN][BUFLEN];
+    char *ptr;
+    int i, idx;
+    int isMatch = FALSE;
+    if (strstr(time, ",") != NULL) { // 목록의 경우 : 해당하는 값이 1개만 있으면 됨
+        for(i = 0; i < BUFLEN; i++) //토큰 배열 초기화
+            memset(token[i], 0, BUFLEN);
+        idx = 0;
+        isMatch = FALSE;
+        ptr = strtok(time, ",");
+        while (ptr != NULL) { //목록의 경우 한 개의 목록으로 토큰을 나눠 토큰 배열 생성
+            strcpy(token[idx++],ptr); 
+            ptr = strtok(NULL, ",");
+        }
+        // for(i = 0; i < idx; i++) {
+        //     printf("token[%d]:%s\n",i, token[i]);
+        // }
+        for (i = 0; i < idx; i++) 
+            if (compareTime(token[i], type)) { //토큰 배열 중 하나라도 만족하면 됨
+                isMatch = TRUE;
+                break;
+            }
+        if (isMatch) //목록에서 해당 시간 있는 경우 true 리턴
+            return TRUE;
+        else //목록 중에서 맞는 시간 없는 경우, 바로 다음 명령어 확인 위해 리턴;
+            return FALSE;
+    }
+    else { //목록 아닌 경우
+        if (compareTime(time, type)) { //해당 시간이 맞는 경우 바로 true 리턴
+            return TRUE;
+        }
+        else
+            return FALSE;
+    }
+           
+}

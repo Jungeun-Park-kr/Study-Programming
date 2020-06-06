@@ -2,13 +2,10 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <ctype.h>
-#include <fcntl.h>
 #include <string.h>
-#include <signal.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include "ssu_crontab.h"
-#include "ssu_crond.h"
 
 extern char crontabFile[BUFLEN];
 extern char crontabLog[BUFLEN];
@@ -267,40 +264,35 @@ int doRemove(int num) {
     return TRUE; 
 }
 
-int checkRange(int i, int num) {
-    switch (i) {
+int checkRange(int num, int type) {
+    switch (type) { //각 항목의 type(분,시,일,월,요일)에 따른 범위가 잘 사용되었는지 확인 후, 맞으면 TRUE, 틀리면 FALSE 리턴
         case 1: //분 항목의 범위 확인
         //printf("case 1:");
             if (num < 0 || num > 59) {
-                    //fprintf(stderr, "실행주기 입력 오류\n");
                 return FALSE;
             }
             else
                 break;
         case 2 : //시 항목의 범위 확인
             if (num < 0 || num > 23) {
-                    //fprintf(stderr, "실행주기 입력 오류\n");
                 return FALSE;
             }
             else
                 break;
         case 3 : //일 항목의 범위 확인
             if (num < 1 || num > 31) {
-                    //fprintf(stderr, "실행주기 입력 오류\n");
                 return FALSE;
             }
             else
                 break;
         case 4 : //월 항목의 범위 확인
             if (num < 1 || num > 12) {
-                    //fprintf(stderr, "실행주기 입력 오류\n");
                 return FALSE;
             }
             else
                 break;
         case 5 : //요일 항목의 범위 확인
             if (num < 0 || num > 6) {
-                    //fprintf(stderr, "실행주기 입력 오류\n");
                 return FALSE;
             }
             else
@@ -309,144 +301,113 @@ int checkRange(int i, int num) {
     return TRUE;
 }
 
-// int checkHyphen(int i, char *buf) {
-//     char *delimeter = "-";
-//     int n1, n2;
-//     if (strstr(buf, delimeter) != NULL) {
-//         sscanf(buf, "%d-%d", &n1,&n2);
-//         if (n1 > n2)
-//             return FALSE;
-//         if (!checkRange(i, n1) || !checkRange(i, n2))
-//             return FALSE;
-//         return TRUE;
-//     }
-//     else
-//         return FALSE;
-// }
+int checkItem(char *item, int type) {
+   //해당 항목을 확인해서 올바르게 사용 되었으면 true, 아니면 false를 리턴하는 함수임
+   //파라미터 : item - 입력받은 항목, type - 입력받은 항목의 종류(분 0, 시1, 일2, 월3, 요일4 로 지정)
+    int num, n1, n2;
+    if (strlen(item) < 3) { // *나, 숫자 밖에 없는 경우
+        if (!strcmp(item, "*")) { // *만 사용 된 경우 
+            return TRUE; //무조건 ok
+        }
+        else if (isdigit(item[0])) { //숫자인 경우
+            num = atoi(item);
+            if (checkRange(num, type)) //범위 올바르게 사용된경우 TRUE
+                return TRUE;
+            else {
+                printf("숫자아닌데 길이 짧음");
+                return FALSE;
+            }
+        }
+        else {
+            printf("숫자도 *도 아닌데 길이 짧음");
+            return FALSE;
+        }
+    }
+    else { //숫자가 3이상인 경우
+        if (strstr(item, "*/") != NULL) { //*/사용된 경우
+            if ((sscanf(item, "*/%d", &num) != 1)) { //문자 뒤 내용이 숫자가 아니면 오류
+                printf("문자 뒤 내용 숫자 아님\n");
+                return FALSE;
+            }
+            if (checkRange(num, type)) { //해당 숫자의 범위 확인
+                return TRUE; //숫자 잘 사용 되었으면 true
+            }
+            else
+                return FALSE;
+        }
+        else if (strstr(item, "-") != NULL) {
+            if (sscanf(item, "%d-%d", &n1, &n2) != 2) { //숫자 아닌 경우
+                printf("범위에 숫자 사용이 안됨\n");
+                return FALSE;
+            }
+            if (!checkRange(n1, type)) { //n1 범위 확인
+                printf("n1 범위 틀림\n");
+                return FALSE;
+            }
+            if (!checkRange(n2, type)) { //n2 범위 확인
+                printf("n2범위 틀림\n");
+                return FALSE;
+            }
+            if (n1 > n2 || n1 == n2) { //숫자1-숫자2 구조중 두 숫자가 같거나, 앞 숫자가 더 큰경우
+                return FALSE;
+            }
+            if (strstr(item, "/") != NULL) { //-와 /가 함께 사용된 경우
+                if (sscanf(item, "%d-%d/%d", &n1, &n2, &num) != 3) { //형식에 맞게 사용되지 않은 경우 false
+                    printf("n1-n2/num 사용 틀림\n");
+                    printf("n1 : %d, n2 : %d, num : %d\n", n1,n2,num);
+                    return FALSE;
+                }
+                if (n2-n1 < num) { //주기가 올바르게 사용되지 않은 경우
+                    printf("n1-n2/num 인데 num 사용 틀림\n");
+                    printf("n1 : %d, n2 : %d, num : %d\n", n1,n2,num);
+                    return FALSE;
+                }
+            }
+            return TRUE;
+        }
+        else { //이 외의 기호 사용시 false리턴
+            printf("이상한 기호 사용\n");
+            return FALSE;
+        }
+    }
+}
 
 int checkSchedule(void) {
-    char *ptr, *ptr2;
-    int i = 0;
-    int num=0, n1 =0, n2=0;
-    char tmp[BUFLEN];
+    char *ptr;
+    int i = 0, j = 0, idx = 0;
+    char token[BUFLEN][BUFLEN];
 
     if (argc < 7) 
         return FALSE;
     
     for (i = 1; i < 6; i++) {
         //printf("argv[%d]:%s길이 : %ld\n", i, argv[i],strlen(argv[i]));
-        if ((strlen(argv[i]) == 1) || (strlen(argv[i]) == 2)) { //해당 항목의 길이가 1이나 2인 경우
-            if(!strcmp(argv[i], "*")) { //'*'만 있어야 함
-                continue;
+        if (strstr(argv[i], ",") != NULL) { // 목록의 경우 : 모든 숫자가 범위 안에 포함되어야 함
+            idx = 0;
+            ptr = strtok(argv[i], ",");
+            for(j = 0; j < BUFLEN; j++)
+                memset(token[j], 0, BUFLEN);
+            while (ptr != NULL) { //목록의 경우 한 개의 목록으로 토큰을 나눠 토큰 배열 생성
+                strcpy(token[idx++],ptr);
+                ptr = strtok(NULL, ",");
             }
-            else if (isdigit(argv[i][0])) { //숫자만 있어야 함
-                //숫자인 경우 범위 확인 필요
-                num = atoi(argv[i]);
-                if (!checkRange(i, num)) { //항복의 숫자 범위 확인
+            for(j=0; j<idx; j++) {
+                printf("token[%d]:%s\n",j, token[j]);
+            }
+            for(j = 0; j < idx; j++) { //생성된 목록 토큰 중 하나라도 틀렸으면 다 틀린것임
+                if (!checkItem(token[i], i)) {
                     fprintf(stderr, "실행주기 입력 오류\n");
                     return FALSE;
                 }
-                if ((strlen(argv[i]) == 2) && num < 10) { //길이가 2인데 숫자 한자리면 오류
-                    fprintf(stderr, "실행주기 입력 오류\n");
-                    return FALSE;
-                }
             }
-            else {
-                //printf("숫자도 별도 아님\n");
-                fprintf(stderr, "실행주기 입력 오류\n");
-                return FALSE;
-            }
-            continue;
         }
-        else { //길이가 3 이상, 1미만인 경우
-            if (strstr(argv[i], "-") != NULL) { //범위 지정인 경우 : 숫자-숫자 구조여야 함
-            //printf("-임\n");
-                if (sscanf(argv[i], "%d-%d", &n1, &n2) != 2) { //숫자 아닌 경우
-                    fprintf(stderr, "실행주기 입력 오류\n");
-                     return FALSE;
-                }
-                if (!checkRange(i, n1)) {
-                    fprintf(stderr, "실행주기 입력 오류\n");
-                    return FALSE;
-                }
-                if (!checkRange(i, n2)) {
-                    fprintf(stderr, "실행주기 입력 오류\n");
-                    return FALSE;
-                }
-                if (n1 > n2 || n1 == n2) { //숫자1-숫자2 구조중 두 숫자가 같거나, 앞 숫자가 더 큰경우
-                    fprintf(stderr, "실행주기 입력 오류\n");
-                    return FALSE;
-                }
-                //printf("저장완료함\n");
-            }
-            else if (strstr(argv[i], "*/") != NULL) { //건너뛰는 경우1 : */숫자 구조여야 함
-                if ((sscanf(argv[i], "*/%d", &num) != 1)) { //문자 뒤 내용이 숫자가 아니면 오류
-                    fprintf(stderr, "실행주기 입력 오류\n");
-                    return FALSE;
-                }
-                if (!checkRange(i, num)) {
-                    fprintf(stderr, "실행주기 입력 오류\n");
-                    return FALSE;
-                }
-            }
-            else if (strstr(argv[i], ",") != NULL) { // 목록의 경우 : 모든 숫자가 범위 안에 포함되어야 함
-                ptr = strtok(argv[i], ",");
-                while (ptr != NULL) { //목록의 경우 모든 숫자가 범위에 속하는지 확인
-                    if (strstr(ptr, "-") != NULL) {
-
-                    }
-                    if (strstr(ptr, "-") != NULL) { // 목록 내의 범위가 있는 경우
-                        // ptr2 = strstr(ptr, "-");
-                        // while(ptr2 != NULL) {
-                        // }
-                        if (sscanf(ptr, "%d-%d", &n1, &n2) != 2) { //숫자 아닌 경우
-                            fprintf(stderr, "실행주기 입력 오류\n");
-                            return FALSE;
-                        }
-                        if (!checkRange(i, n1)) {
-                            fprintf(stderr, "실행주기 입력 오류\n");
-                            return FALSE;
-                        }
-                        if (!checkRange(i, n2)) {
-                            fprintf(stderr, "실행주기 입력 오류\n");
-                            return FALSE;
-                        }
-                        if (n1 > n2 || n1 == n2) { //숫자1-숫자2 구조중 두 숫자가 같거나, 앞 숫자가 더 큰경우
-                            fprintf(stderr, "실행주기 입력 오류\n");
-                            return FALSE;
-                        }
-                    }
-                    num = atoi(ptr);
-                    if (!checkRange(i, num)) { //항복의 숫자 범위 확인
-                        fprintf(stderr, "실행주기 입력 오류\n");
-                        return FALSE;
-                    }
-                    ptr = strtok(NULL, ",");
-                }
-            }
-            else if ((strstr(argv[i], "*/") == NULL) && (strstr(argv[i], "/") != NULL)) { //건너뛰는 경우2 : 숫자/숫자 구조여야 함 (-과 같이 쓰일 수 있으므로 if문으로)
-                if ((sscanf(argv[i], "%d/%d", &n1, &n2)) != 2) {
-                    fprintf(stderr, "실행주기 입력 오류\n");
-                    return FALSE;
-                }
-                // ptr = strtok(argv[i], "/");
-                // if (isdigit(ptr[0])) { //숫자인지 확인
-                //     fprintf(stderr, "실행주기 입력 오류\n");
-                //     return FALSE;
-                // }
-                // ptr = strtok(NULL, "/"); 
-                // if (isdigit(ptr[0])) { // '/'다음 문자도 숫자인지 확인
-                //     fprintf(stderr, "실행주기 입력 오류\n");
-                //     return FALSE;
-                // }
-            }
-            else { //그 외의 문자가 사용된 경우
+        else { //목록아닌 경우 : 단일 항목이므로 바로 확인하면 됨
+            if(!checkItem(argv[i], i)) { //올바르게 항목 사용 되었는지 확인
                 fprintf(stderr, "실행주기 입력 오류\n");
                 return FALSE;
             }
-            
-            
         }
     }
+    //for loop로 5개 항목 모두 확인 올바르게 되었으면 TRUE 리턴!
     return TRUE;
 }
