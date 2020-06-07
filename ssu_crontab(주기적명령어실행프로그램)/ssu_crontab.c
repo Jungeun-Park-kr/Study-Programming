@@ -5,8 +5,11 @@
 #include <time.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include "ssu_crontab.h"
+
+#define SECOND_TO_MICRO 1000000
 
 extern char crontabFile[BUFLEN];
 extern char crontabLog[BUFLEN];
@@ -19,6 +22,9 @@ FILE *cronfp;
 int main() {
     char saved_path[BUFLEN];
     FILE *fp;
+    struct timeval start_time, end_time;
+    
+    gettimeofday(&start_time, NULL); //프로그램 실행 시간 저장
 
     getcwd(saved_path, BUFLEN); //현재 작업 경로 저장
     strcpy(workDir, saved_path);
@@ -31,9 +37,20 @@ int main() {
         }
         fclose(fp);
     }
-    if(!doPrompt())
+    if(!doPrompt()) { //프롬프트 에러 발생한 경우
+        gettimeofday(&end_time, NULL);
         exit(1);
+    }
+    //프롬프트 exit입력시 제어가 여기로 옴
+    gettimeofday(&end_time, NULL); //프로그램 종료 시간 저장
 
+    end_time.tv_sec -= start_time.tv_sec; //프로그램 런타임 계산
+	if (end_time.tv_usec < start_time.tv_usec) {
+		end_time.tv_sec--;
+		end_time.tv_usec += SECOND_TO_MICRO;
+	}
+	end_time.tv_usec -= start_time.tv_usec;
+	printf("Runtime: %ld:%06ld(sec:usec)\n", end_time.tv_sec, end_time.tv_usec); //프로그램 런타임 출력 후 종료
     exit(0);
 }
 
