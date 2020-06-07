@@ -70,7 +70,10 @@ void ssu_rsync(int argc, char *argv[]) {
 		exit(EXIT_FAILURE);
 	}
 	//명령어 복사
-	sprintf(usrCommand, "ssu_rsync %s %s", argv[1], rtrim(argv[2]));
+	if(argc == 3)
+		sprintf(usrCommand, "ssu_rsync %s %s", argv[1], rtrim(argv[2]));
+	else if (argc == 4)
+		sprintf(usrCommand, "ssu_rsync %s %s %s", argv[1], rtrim(argv[2]), argv[3]);
 	
 	getcwd(saved_path, BUFLEN);
 	strcpy(workPath, saved_path);
@@ -81,21 +84,21 @@ void ssu_rsync(int argc, char *argv[]) {
 	}
 	if (argc == 4) {
 		if (realpath(argv[2], srcPath) == NULL) { //src이름 절대경로로 저장
-			fprintf(stderr, "realpath error for %s\n", argv[1]);
+			fprintf(stderr, "realpath error for %s! file don't exist!\n", argv[2]);
 			exit(1);
 		}
 		if (realpath(argv[3], dstPath) == NULL) {  //dst 이름  절대경로로 저장
-			fprintf(stderr, "realpath error for %s\n", argv[2]);
+			fprintf(stderr, "realpath error for %s! file don't exist!\n", argv[3]);
 			exit(1);
 		}
 	}
 	else if (argc == 3) {
 		if (realpath(argv[1], srcPath) == NULL) { //src이름 절대경로로 저장
-			fprintf(stderr, "realpath error for %s\n", argv[1]);
+			fprintf(stderr, "realpath error for %s! file don't exist!\n", argv[1]);
 			exit(1);
 		}
 		if (realpath(argv[2], dstPath) == NULL) {  //dst 이름  절대경로로 저장
-			fprintf(stderr, "realpath error for %s\n", argv[2]);
+			fprintf(stderr, "realpath error for %s! file don't exist!\n", argv[2]);
 			exit(1);
 		}
 	}
@@ -186,7 +189,7 @@ int doSync() {
 
 	//src가 디렉토리인지 일반파일인지 확인
 	if (stat(srcPath, &statbuf) < 0) {
-		fprintf(stderr, "stat error\n");
+		fprintf(stderr, "stat error for %s\n", srcPath);
 		return FALSE;
 	}
 	//동기화 하는 파일 못 열게 함
@@ -333,6 +336,7 @@ int compareFile( char *file1, char *file2) {
 	struct stat statbuf1, statbuf2;
 	struct tm tm1, tm2;
 	int size1, size2;
+
 	if (stat(file1, &statbuf1) < 0) { //파일정보 가져오기
 		fprintf(stderr, "stat error for %s\n", file1);
 		return FALSE;
@@ -347,10 +351,6 @@ int compareFile( char *file1, char *file2) {
 		//printf("수정시간이 다름\n");
 		return TRUE;	//수정시간 다름
 	}
-	// else
-	// {
-	// 	printf("수정시간 같음\n");
-	// }
 
 	if ((statbuf1.st_mode & S_IFMT) == S_IFREG) { //일반 파일인 경우 바로 크기 저장
 		size1 = statbuf1.st_size;
@@ -393,21 +393,29 @@ int saveDirInfo(char *path, char(*flist)[BUFLEN], int idx) {
 	char nxtpath[BUFLEN];
 	char buf[BUFLEN];
 	struct dirent **filelist;
-
+	
 	if ((cnt = scandir(path, &filelist, except_tmp_file, NULL)) == -1) { //모든 파일 가져옴
 		fprintf(stderr, "scandir error for %s\n", path);
 		return FALSE;
 	}
 	allcnt = cnt;
 	for (i = idx, j = 0; j < cnt; j++) {
-		if(rOption && i!=j)  {//r옵션 때문에 재귀호출 된 경우, 부모 디렉토리까지 같이 출력
+		printf("i : %d, idx : %d\n", i, idx);
+		if(rOption && (i!=j))  {//r옵션 때문에 재귀호출 된 경우, 부모 디렉토리까지 같이 출력
 			sprintf(buf, "%s/%s", path, filelist[j]->d_name);
+		}
+		else if (mOption && (idx == -1)) { //src파일일 때 m옵션 사용된 경우 구분해주기 위해서 idx:-1로 호출
+			if(i == -1) { //최초 실행 시에만 i를 증가시켜줌(0으로 돌려주기 위해)
+				i++;
+			}
+			sprintf(buf, "%s/%s", path, filelist[j]->d_name); //전용 파일 이름 버퍼
+			//strcpy(buf, filelist[j]->d_name);
 		}
 		else
 			strcpy(buf, filelist[j]->d_name); //해당 파일 이름을 저장
-		
+
 		if (stat(buf, &statbuf) < 0) {
-			fprintf(stderr, "stat error\n");
+			fprintf(stderr, "saved dir info stat error for %s\n", buf);
 			return FALSE;
 		}
 		
@@ -612,18 +620,20 @@ int syncDir() { //디렉토리 파일을 동기화
 int syncFile() { //일반 파일을 동기화
 	is_changed = TRUE;
 	is_started = TRUE;
-	char pathbuf[BUFLEN], newName[BUFLEN], timebuf[BUFLEN], logbuf[BUFLEN], tmpbuf[BUFLEN];
+	char pathbuf[BUFLEN], newName[BUFLEN], timebuf[BUFLEN], logbuf[BUFLEN], tmpbuf[BUFLEN], rmvbuf[BUFLEN], dstbuf[BUFLEN], buf[BUFLEN];
 	char cpcommand[BUFLEN];
 	long fsize;
 	FILE *fp;
 	struct stat statbuf;
 	struct stat statbuf2;
+	struct dirent **filelist;
 	time_t cur_time;
+	int i, cnt;
 
 	memset(logbuf, 0, BUFLEN);
-
+	memset(rmvbuf, 0, BUFLEN);
 	if (stat(srcPath, &statbuf) < 0) { //src파일정보 가져오기
-		fprintf(stderr, "stat error\n");
+		fprintf(stderr, "stat error for %s\n",srcPath);
 		return FALSE;
 	}
 
@@ -637,7 +647,7 @@ int syncFile() { //일반 파일을 동기화
 	}
 	else { //dst에 src가 있는 경우 -> 동기화 해야함
 		if (stat(pathbuf, &statbuf2) < 0) { //src파일정보 가져오기
-			fprintf(stderr, "stat error\n");
+			fprintf(stderr, "stat error for %s\n", pathbuf);
 			return FALSE;
 		}
 		//src와 dst의 파일이 다른지 비교
@@ -648,6 +658,45 @@ int syncFile() { //일반 파일을 동기화
 			sprintf(tmpbuf, "\t%s %ldbytes\n", srcName, statbuf.st_size);	
 			strcat(logbuf, tmpbuf);
 		}
+	}
+	if (mOption) { //m옵션 사용된 경우, src 파일 제외 dst 내의 파일 모두 삭제
+		if ((cnt = scandir(dstPath, &filelist, except_tmp_file, NULL)) == -1) { //모든 파일 가져옴
+			fprintf(stderr, "scandir error for %s\n", dstPath);
+			return FALSE;
+		}
+		for (i = 0; i < cnt; i++) {
+			sprintf(buf, "%s/%s", dstName, filelist[i]->d_name); //파일 이름 저장
+			if(strstr(buf, srcName) !=NULL) //src파일은 삭제 안함
+				continue;
+			if (stat(buf, &statbuf) < 0) {
+				fprintf(stderr, "saved dir info stat error for %s\n", buf);
+				return FALSE;
+			}
+			if ((statbuf.st_mode & S_IFMT) == S_IFREG) { //일반 파일인 경우 바로 저장
+				sprintf(tmpbuf, "\t%s delete\n", buf);	//삭제된 파일 정보 로그에 쓰기 위해
+				strcat(rmvbuf, tmpbuf);	 //로그 작성 버퍼에 추가
+				if (remove(buf) < 0) {
+					fprintf(stderr, "remove error for %s\n", buf);
+					return FALSE;
+				}
+			}
+			else if ((statbuf.st_mode & S_IFMT) == S_IFDIR) { //디렉토리인 경우
+				sprintf(tmpbuf, "\t%s delete\n", buf);	//삭제된 파일 정보 로그에 쓰기 위해
+				strcat(rmvbuf, tmpbuf);	 //로그 작성 버퍼에 추가
+				if (!rmvDir(buf)) {
+					fprintf(stderr, "rmvDir error for %s\n", buf);
+					return FALSE;
+				}
+				if (remove(buf) < 0) {
+					fprintf(stderr, "remove error for %s\n", buf);
+					return FALSE;
+				}
+			}
+		}
+		//메모리 해제 후 파일개수 리턴
+		for (i = 0; i < cnt; i++)
+			free(filelist[i]);
+		free(filelist);
 	}
 	
 	if (remove(srcBackup) < 0) { //백업src파일 삭제
@@ -688,6 +737,12 @@ int syncFile() { //일반 파일을 동기화
 			return FALSE;
 		}
 	}
+	if (mOption && (strlen(rmvbuf) > 0)) {
+		if (fputs(rmvbuf, fp) < 0) { //로그 파일 작성
+			fprintf(stderr, "write error\n");
+			return FALSE;
+		}
+	}
 	fclose(fp);
 	
 	is_finished = TRUE;
@@ -713,7 +768,7 @@ int isExist(char *dirName, char *fname, char *pathname) {
 
 		sprintf(tmpname, "%s/%s", dirName, dirp->d_name);
 		if (stat(tmpname, &statbuf) < 0) {
-			fprintf(stderr, "stat error\n");
+			fprintf(stderr, "stat error for %s\n", tmpname);
 			return FALSE;
 		}
 
