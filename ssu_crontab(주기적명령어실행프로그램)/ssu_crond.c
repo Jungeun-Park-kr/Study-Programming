@@ -111,11 +111,9 @@ int doCrond() {
         }
         //해당 명령어가 지금 실행되어야 하는지 확인
         for(i = 0; i < 5; i++) { //항목별로 하나씩 확인
-            //명령어에 , 있는 경우 또 토큰으로 나눔
             if (!checkTime(schedule[i], i)) { 
-                //하나라도 시간 틀린 경우 다음 명령어 확인 위해 빠져나감
                 isMatch = FALSE; //시간 맞지 않음을 저장
-                break;
+                break; //하나라도 시간 틀린 경우 다음 명령어 확인 위해 빠져나감
             }
         }
         if (isMatch) { //시간이 같은 경우 
@@ -182,8 +180,11 @@ int compareTime(char *time, int type) {
             return TRUE;
         if (isdigit(time[0])) { //숫자인 경우
             num = atoi(time);
-            if (num == ctime) //현재시간과 같으면 TRUE리턴
+            if (num == ctime) { //현재시간과 같으면 TRUE리턴
                 return TRUE;
+            }
+            else
+                return FALSE;
         }
         else //그 이외인 경우 false
             return FALSE;
@@ -259,6 +260,7 @@ int compareTime(char *time, int type) {
         else //그 외는 다 틀림
             return FALSE;
     }
+    return FALSE;
 }
 
 int checkTime(char *time, int type) { 
