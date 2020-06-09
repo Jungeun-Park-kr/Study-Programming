@@ -171,8 +171,8 @@ int doPrompt(void) {
                 continue;
             }
             int rmvnum = atoi(argv[1]);
-            if (rmvnum > idx && rmvnum < 0) { //존재하는 명령어 개수의 범위에 벗어나는 경우 에러처리 후 프롬프트
-                fprintf(stderr, "Invalid remove number!");
+            if (rmvnum >= idx || rmvnum < 0) { //존재하는 명령어 개수의 범위에 벗어나는 경우 에러처리 후 프롬프트
+                fprintf(stderr, "Invalid remove number!\n");
                 continue;
             }
 
@@ -280,37 +280,36 @@ int doRemove(int num) {
 
 int checkRange(int num, int type) {
     switch (type) { //각 항목의 type(분,시,일,월,요일)에 따른 범위가 잘 사용되었는지 확인 후, 맞으면 TRUE, 틀리면 FALSE 리턴
-        case 1: //분 항목의 범위 확인
-        //printf("case 1:");
-            if (num < 0 || num > 59) {
-                return FALSE;
-            }
-            else
-                break;
-        case 2 : //시 항목의 범위 확인
-            if (num < 0 || num > 23) {
-                return FALSE;
-            }
-            else
-                break;
-        case 3 : //일 항목의 범위 확인
-            if (num < 1 || num > 31) {
-                return FALSE;
-            }
-            else
-                break;
-        case 4 : //월 항목의 범위 확인
-            if (num < 1 || num > 12) {
-                return FALSE;
-            }
-            else
-                break;
-        case 5 : //요일 항목의 범위 확인
-            if (num < 0 || num > 6) {
-                return FALSE;
-            }
-            else
-                break;
+    case 1: //분 항목의 범위 확인
+        if (num < 0 || num > 59) {
+            return FALSE;
+        }
+        else
+            break;
+    case 2 : //시 항목의 범위 확인
+        if (num < 0 || num > 23) {
+            return FALSE;
+        }
+        else
+            break;
+    case 3 : //일 항목의 범위 확인
+        if (num < 1 || num > 31) {
+            return FALSE;
+        }
+        else
+            break;
+    case 4 : //월 항목의 범위 확인
+        if (num < 1 || num > 12) {
+            return FALSE;
+        }
+        else
+            break;
+    case 5 : //요일 항목의 범위 확인
+        if (num < 0 || num > 6) {
+            return FALSE;
+        }
+        else
+            break;
     }
     return TRUE;
 }
@@ -327,13 +326,11 @@ int checkItem(char *item, int type) {
             num = atoi(item);
             if (checkRange(num, type)) //범위 올바르게 사용된경우 TRUE
                 return TRUE;
-            else {
+            else 
                 return FALSE;
-            }
         }
-        else {
+        else 
             return FALSE;
-        }
     }
     else { //숫자가 3이상인 경우
         if (strstr(item, "*/") != NULL) { //*/사용된 경우
@@ -370,6 +367,7 @@ int checkItem(char *item, int type) {
             return FALSE;
         }
     }
+    return FALSE;
 }
 
 int checkSchedule(void) {
@@ -393,7 +391,7 @@ int checkSchedule(void) {
                 ptr = strtok(NULL, ",");
             }
             for(j = 0; j < idx; j++) { //생성된 목록 토큰 중 하나라도 틀렸으면 다 틀린것임
-                if (!checkItem(token[i], i)) {
+                if (!checkItem(token[j], j)) {
                     fprintf(stderr, "---실행주기 입력 오류---\n");
                     return FALSE;
                 }
