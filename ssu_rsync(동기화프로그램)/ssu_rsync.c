@@ -64,6 +64,10 @@ void ssu_rsync(int argc, char *argv[]) {
 	char cpcommand[BUFLEN];
 	struct stat statbuf;
 
+	if (argc < 3) {
+		fprintf(stderr, "usage : %s [OPTION] <SRC> <DST>\n", argv[0]);
+		exit(1);
+	}
 	//SIGINT시그널을 등록, cancel_sync_handler()함수 핸들러 등록
 	if (signal(SIGINT, cancel_sync_handler) == SIG_ERR) {
 		fprintf(stderr, "cannot handle SIGINT\n");
@@ -77,7 +81,7 @@ void ssu_rsync(int argc, char *argv[]) {
 	
 	getcwd(saved_path, BUFLEN);
 	strcpy(workPath, saved_path);
-	sprintf(logFile, "%s/ssu_rync_log", saved_path);
+	sprintf(logFile, "%s/ssu_rsync_log", saved_path);
 	if (access(logFile, F_OK)) { //로그파일 없으면 생성
 		logfp = fopen(logFile, "w");
 		fclose(logfp);
@@ -203,62 +207,60 @@ int doSync() {
 	}
 	//동기화 시작
 	if ((statbuf.st_mode & S_IFMT) == S_IFREG) { //src파일이 일반 파일인 경우
-		if (!syncFile()) {
-			fprintf(stderr, "syncFile error\n");
-			//백업파일들 삭제 후 리턴
-			if (remove(srcBackup) < 0) { //백업src파일 삭제
-				fprintf(stderr, "remove error for %s\n", srcBackup);
-				return FALSE;
-			}
-			if (remove(logBackup) < 0) { //백업로그파일 삭제
-				fprintf(stderr, "remove error for %s\n", srcBackup);
-				return FALSE;
-			}
-			if (!rmvDir(dstBackup)) { //dst백업 내의 내용 삭제
-				fprintf(stderr, "rmvDir error for %s\n", dstBackup);
-				return FALSE;
-			}
-			if (remove(dstBackup) < 0) { //dst파일 자체 삭제
-				fprintf(stderr, "remove error for %s\n", dstBackup);
-				return FALSE;
-			}
-			lock.l_type = F_UNLCK; //락 해제
-			fcntl(fd, F_SETLK, &lock);
+		syncFile();
+
+		lock.l_type = F_UNLCK; //동기화 후 락 해제
+		fcntl(fd, F_SETLK, &lock);
+
+		//백업파일들 삭제 후 리턴
+		if (remove(srcBackup) < 0) { //백업src파일 삭제
+			fprintf(stderr, "remove error for %s\n", srcBackup);
 			return FALSE;
 		}
+		if (remove(logBackup) < 0) { //백업로그파일 삭제
+			fprintf(stderr, "remove error for %s\n", srcBackup);
+			return FALSE;
+		}
+		if (!rmvDir(dstBackup)) { //dst백업 내의 내용 삭제
+			fprintf(stderr, "rmvDir error for %s\n", dstBackup);
+			return FALSE;
+		}
+		if (remove(dstBackup) < 0) { //dst파일 자체 삭제
+			fprintf(stderr, "remove error for %s\n", dstBackup);
+			return FALSE;
+		}
+		return TRUE;
 	}
 	else if ((statbuf.st_mode & S_IFMT) == S_IFDIR) { //src파일이 디렉토리인 경우
-		if (!syncDir()) {
-			fprintf(stderr, "syncDir error\n");
-			//백업파일들 삭제 후 리턴
-			if (!rmvDir(srcBackup)) { //src백업 내의 내용 삭제
-				fprintf(stderr, "rmvDir error for %s\n", dstBackup);
-				return FALSE;
-			}
-			if (remove(srcBackup) < 0) { //백업src파일 삭제
-				fprintf(stderr, "remove error for %s\n", srcBackup);
-				return FALSE;
-			}
-			if (remove(logBackup) < 0) { //백업로그파일 삭제
-				fprintf(stderr, "remove error for %s\n", srcBackup);
-				return FALSE;
-			}
-			if (!rmvDir(dstBackup)) { //dst백업 내의 내용 삭제
-				fprintf(stderr, "rmvDir error for %s\n", dstBackup);
-				return FALSE;
-			}
-			if (remove(dstBackup) < 0) { //dst파일 자체 삭제
-				fprintf(stderr, "remove error for %s\n", dstBackup);
-				return FALSE;
-			}
-			lock.l_type = F_UNLCK; //락 해제
-			fcntl(fd, F_SETLK, &lock);
+		syncDir();
+
+		lock.l_type = F_UNLCK; //동기화 후 락 해제
+		fcntl(fd, F_SETLK, &lock);
+
+		//백업파일들 삭제 후 리턴
+		if (!rmvDir(srcBackup)) { //src백업 내의 내용 삭제
+			fprintf(stderr, "rmvDir error for %s\n", dstBackup);
 			return FALSE;
 		}
+		if (remove(srcBackup) < 0) { //백업src파일 삭제
+			fprintf(stderr, "remove error for %s\n", srcBackup);
+			return FALSE;
+		}
+		if (remove(logBackup) < 0) { //백업로그파일 삭제
+			fprintf(stderr, "remove error for %s\n", srcBackup);
+			return FALSE;
+		}
+		if (!rmvDir(dstBackup)) { //dst백업 내의 내용 삭제
+			fprintf(stderr, "rmvDir error for %s\n", dstBackup);
+			return FALSE;
+		}
+		if (remove(dstBackup) < 0) { //dst파일 자체 삭제
+			fprintf(stderr, "remove error for %s\n", dstBackup);
+			return FALSE;
+		}
+		return TRUE;
 	}
-	lock.l_type = F_UNLCK; //동기화 후 락 해제
-	fcntl(fd, F_SETLK, &lock);
-	return TRUE;
+	return FALSE;
 }
 
 long getDirSize(char *dirName) {
@@ -348,7 +350,6 @@ int compareFile( char *file1, char *file2) {
 	tm1 = *localtime(&statbuf1.st_mtime);
 	tm2 = *localtime(&statbuf2.st_mtime);
 	if (memcmp(&tm1, &tm2, sizeof(struct tm))) { //수정시간 확인
-		//printf("수정시간이 다름\n");
 		return TRUE;	//수정시간 다름
 	}
 
@@ -366,7 +367,6 @@ int compareFile( char *file1, char *file2) {
 		size2 = getDirSize(file2);
 	}
 	if (size1 == size2) { //파일 사이즈 동일한 경우
-		//printf("사이즈 같음\n");
 		return FALSE;
 	}
 	else //파일 사이즈 다른 경우
@@ -385,8 +385,7 @@ int except_tmp_file(const struct dirent *info) { //scandir()에 사용할 함수
 }
 
 int saveDirInfo(char *path, char(*flist)[BUFLEN], int idx) {
-	//path(디렉토리)에 있는 파일 이름 flist에 저장, st_mtime을 tm에 저장 총 파일 개수 리턴
-	// -r 옵션 하면 원래대로, 없으면 겉 파일만 하면 될듯
+	//path(디렉토리)에 있는 파일 이름 flist에 저장 후 총 파일 개수 리턴
 	int cnt = 0, allcnt = 0, filecnt = 0;
 	int i, j;
 	struct stat statbuf;
@@ -400,16 +399,8 @@ int saveDirInfo(char *path, char(*flist)[BUFLEN], int idx) {
 	}
 	allcnt = cnt;
 	for (i = idx, j = 0; j < cnt; j++) {
-		printf("i : %d, idx : %d\n", i, idx);
-		if(rOption && (i!=j))  {//r옵션 때문에 재귀호출 된 경우, 부모 디렉토리까지 같이 출력
+		if(rOption && (i!=j)) { //r옵션 때문에 재귀호출 된 경우, 부모 디렉토리까지 같이 출력
 			sprintf(buf, "%s/%s", path, filelist[j]->d_name);
-		}
-		else if (mOption && (idx == -1)) { //src파일일 때 m옵션 사용된 경우 구분해주기 위해서 idx:-1로 호출
-			if(i == -1) { //최초 실행 시에만 i를 증가시켜줌(0으로 돌려주기 위해)
-				i++;
-			}
-			sprintf(buf, "%s/%s", path, filelist[j]->d_name); //전용 파일 이름 버퍼
-			//strcpy(buf, filelist[j]->d_name);
 		}
 		else
 			strcpy(buf, filelist[j]->d_name); //해당 파일 이름을 저장
@@ -440,7 +431,6 @@ int saveDirInfo(char *path, char(*flist)[BUFLEN], int idx) {
 			}
 		}
 	}
-
 	//메모리 해제 후 파일개수 리턴
 	for (i = 0; i < cnt; i++)
 		free(filelist[i]);
@@ -492,8 +482,7 @@ int syncDir() { //디렉토리 파일을 동기화
 	dstcnt = saveDirInfo(dstPath, dstflist,  0); //DST파일 정보 가져옴
 	chdir(workPath);
 
-
-	for (i=0; i < srccnt; i++) {
+	for (i = 0; i < srccnt; i++) {
 		isfound = FALSE;
 		ismodified = FALSE;
 		sprintf(srcbuf, "%s/%s", srcPath, srcflist[i]);
@@ -527,7 +516,15 @@ int syncDir() { //디렉토리 파일을 동기화
 		}
 		else if (ismodified == TRUE) { //파일이 변경된 경우
 			//기존파일 삭제 후, 동기화 시켜주기
-			mySync(dstbuf, srcbuf, TRUE);
+			if (stat(srcbuf, &statbuf) <0) {
+					fprintf(stderr, "stat error for %s\n", srcbuf);
+					return FALSE;
+			}
+			if (S_ISREG(statbuf.st_mode)) { //생성된 파일 정보 로그에 쓰기
+				mySync(dstbuf, srcbuf, TRUE);
+			}
+			else if (S_ISDIR(statbuf.st_mode)) //디렉토리면 skip
+				continue;
 
 			//수정된 파일 정보 동기화하여 로그파일에 작성
 			if (stat(srcbuf, &statbuf) <0) {
@@ -542,7 +539,7 @@ int syncDir() { //디렉토리 파일을 동기화
 			}
 		}
 	}
-	for (i=0; i < dstcnt; i++) {
+	for ( i= 0; i < dstcnt; i++) {
 		isfound = FALSE;
 		sprintf(dstbuf, "%s/%s", dstPath, dstflist[i]);
 		for(j=0; j<srccnt; j++) {
@@ -571,27 +568,9 @@ int syncDir() { //디렉토리 파일을 동기화
 		}
 	}
 
-	//백업 파일들 삭제
-	if (!rmvDir(srcBackup)) { //src백업 내의 내용 삭제
-		fprintf(stderr, "rmvDir error for %s\n", dstBackup);
-		return FALSE;
-	}
-	if (remove(srcBackup) < 0) { //백업src파일 삭제
-		fprintf(stderr, "remove error for %s\n", srcBackup);
-		return FALSE;
-	}
-	if (remove(logBackup) < 0) { //백업로그파일 삭제
-		fprintf(stderr, "remove error for %s\n", srcBackup);
-		return FALSE;
-	}
-	if (!rmvDir(dstBackup)) { //dst백업 내의 내용 삭제
-		fprintf(stderr, "rmvDir error for %s\n", dstBackup);
-		return FALSE;
-	}
-	if (remove(dstBackup) < 0) { //dst파일 자체 삭제
-		fprintf(stderr, "remove error for %s\n", dstBackup);
-		return FALSE;
-	}
+	//백업파일들 삭제
+
+
 	is_finished = TRUE; //동기화 완료
 
 	is_logchanged = TRUE;	
@@ -660,12 +639,13 @@ int syncFile() { //일반 파일을 동기화
 		}
 	}
 	if (mOption) { //m옵션 사용된 경우, src 파일 제외 dst 내의 파일 모두 삭제
-		if ((cnt = scandir(dstPath, &filelist, except_tmp_file, NULL)) == -1) { //모든 파일 가져옴
+		chdir(dstPath);
+		if ((cnt = scandir(".", &filelist, except_tmp_file, NULL)) == -1) { //모든 파일 가져옴
 			fprintf(stderr, "scandir error for %s\n", dstPath);
 			return FALSE;
 		}
 		for (i = 0; i < cnt; i++) {
-			sprintf(buf, "%s/%s", dstName, filelist[i]->d_name); //파일 이름 저장
+			sprintf(buf, "%s", filelist[i]->d_name); //파일 이름 저장
 			if(strstr(buf, srcName) !=NULL) //src파일은 삭제 안함
 				continue;
 			if (stat(buf, &statbuf) < 0) {
@@ -697,26 +677,11 @@ int syncFile() { //일반 파일을 동기화
 		for (i = 0; i < cnt; i++)
 			free(filelist[i]);
 		free(filelist);
+		chdir(workPath);
 	}
 	
-	if (remove(srcBackup) < 0) { //백업src파일 삭제
-		fprintf(stderr, "remove error for %s\n", srcBackup);
-		return FALSE;
-	}
-	if (remove(logBackup) < 0) { //백업로그파일 삭제
-		fprintf(stderr, "remove error for %s\n", srcBackup);
-		return FALSE;
-	}
-	if (!rmvDir(dstBackup)) { //dst백업 내의 내용 삭제
-		fprintf(stderr, "rmvDir error for %s\n", dstBackup);
-		return FALSE;
-	}
-	if (remove(dstBackup) < 0) { //dst파일 자체 삭제
-		fprintf(stderr, "remove error for %s\n", dstBackup);
-		return FALSE;
-	}
-	is_finished = TRUE; //동기화 완료
 
+	is_finished = TRUE; //동기화 완료
 	is_logchanged = TRUE;
 	time(&cur_time);
 	ctime_r(&cur_time, timebuf);
@@ -830,64 +795,88 @@ static void cancel_sync_handler(int signo) {
 	}
 	if (is_changed == TRUE) { //파일 변경이 시작된 경우
 		if (is_started || is_finished) { //이미 시작되었으면 파일 동기화 전으로 되돌림
-			if (isDir) //SRC가 디렉토리인 경우 - 디렉토리 내 파일 삭제 후 디렉토리 삭제
+			if (isDir) { //SRC가 디렉토리인 경우 - 디렉토리 내 파일 삭제 후 디렉토리 삭제
 				if (!rmvDir(srcPath)) { //src내의 내용 삭제
 					fprintf(stderr, "rmvDir error for %s\n", srcPath);
 					return ;
 				}
-			if (remove(srcPath) < 0) { //src파일 자체 삭제
+				if (rmdir(srcPath) < 0) { //src파일 자체 삭제
 					fprintf(stderr, "remove error for %s\n", srcPath);
 					return ;
+				}
 			}
-			sprintf(cpcommand, "cp -r -p %s %s", srcBackup, srcPath); //src 파일 되돌리기
-			system(cpcommand);
+			else {
+				if (remove(srcPath) < 0) { //src파일 자체 삭제
+					fprintf(stderr, "remove error for %s\n", srcPath);
+					return ;
+				}
+			}
+			
+			if (rename(srcBackup, srcPath) < 0) { //src파일 되돌리기
+				fprintf(stderr, "rename error\n");
+				exit(1);
+			}
 
 			if (!rmvDir(dstPath)) { //dst 내의 내용 삭제
-				fprintf(stderr, "rmvDir error for %s\n", dstBackup);
+				fprintf(stderr, "rmvDir error for %s\n", dstPath);
 				return ;
 			}
-			if (remove(dstPath) < 0) { //dst파일 자체 삭제
-				fprintf(stderr, "remove error for %s\n", dstBackup);
+			if (rmdir(dstPath) < 0) { //dst파일 자체 삭제
+				fprintf(stderr, "remove error for %s\n", dstPath);
 				return ;
 			}
-			sprintf(cpcommand, "cp -r -p %s %s", dstBackup, dstPath); //dst 파일 되돌리기
-			system(cpcommand);
+			if (rename(dstBackup, dstPath) < 0) { //dst파일 되돌리기
+				fprintf(stderr, "rename error\n");
+				exit(1);
+			}
 
 			if (!is_logchanged) { //로그 파일도 변경 된 경우
 				//로그 파일도 동기화 전으로 되돌림
 				if (remove(logFile) < 0) { //로그파일 삭제
-					fprintf(stderr, "remove error for %s\n", srcBackup);
+					fprintf(stderr, "remove error for %s\n", logFile);
 					return ;
 				}
-				sprintf(cpcommand, "cp -r -p %s %s", logBackup, logFile); //로그 파일 되돌리기
-				system(cpcommand);
+				if (rename(logBackup, logFile) < 0) { //로그 파일 되돌리기
+					fprintf(stderr, "rename error\n");
+					exit(1);
+				}
 			}
 		}
 	}
-	
-	//파일 되돌리기 완료 or 아직 변경 안된 경우 => 백업 파일 삭제 후 종료
-	if (isDir) { //SRC가 디렉토리인 경우
-		if (!rmvDir(srcBackup)) { //src백업 내의 내용 삭제
-			fprintf(stderr, "rmvDir error for %s\n", srcBackup);
-			return;
+	else {
+		//아직 변경 안된 경우 => 백업 파일 삭제 후 종료
+		if (isDir) { //SRC가 디렉토리인 경우
+			if (!rmvDir(srcBackup)) { //src백업 내의 내용 삭제
+				fprintf(stderr, "rmvDir error for %s\n", srcBackup);
+				return;
+			}
+			if (rmdir(srcBackup) < 0) { //백업src파일 자체 삭제
+				fprintf(stderr, "remove error for %s\n", srcBackup);
+				return;
+			}
+		}
+		else {
+			if (remove(srcBackup) < 0) { //백업src파일 자체 삭제
+				fprintf(stderr, "remove error for %s\n", srcBackup);
+				return;
+			}
+		}
+			
+		if (remove(logBackup) < 0) { //백업로그파일 삭제
+			fprintf(stderr, "remove error for %s\n", srcBackup);
+			return ;
+		}
+		if (!rmvDir(dstBackup)) { //dst백업 내의 내용 삭제
+			fprintf(stderr, "rmvDir error for %s\n", dstBackup);
+			return ;
+		}
+		if (rmdir(dstBackup) < 0) { //dst파일 자체 삭제
+			fprintf(stderr, "remove error for %s\n", dstBackup);
+			return ;
 		}
 	}
-	if (remove(srcBackup) < 0) { //백업src파일 자체 삭제
-			fprintf(stderr, "remove error for %s\n", srcBackup);
-			return;
-	}	
-	if (remove(logBackup) < 0) { //백업로그파일 삭제
-		fprintf(stderr, "remove error for %s\n", srcBackup);
-		return ;
-	}
-	if (!rmvDir(dstBackup)) { //dst백업 내의 내용 삭제
-		fprintf(stderr, "rmvDir error for %s\n", dstBackup);
-		return ;
-	}
-	if (remove(dstBackup) < 0) { //dst파일 자체 삭제
-		fprintf(stderr, "remove error for %s\n", dstBackup);
-		return ;
-	}
+	//파일 되돌리기 완료 or 
+	exit(0);
 }
 
 char *rtrim(char *str) { //문자열의 우측에 존재하는 공백을 제거 후 리턴
